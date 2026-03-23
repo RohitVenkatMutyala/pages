@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Semantic Analysis - Viz-Compiler</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Navbar Styles */
+        .navbar {
+            background-color: var(--white); border-bottom: 4px solid var(--text-dark);
+            padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 0px rgba(0,0,0,0.1); flex-wrap: wrap; gap: 10px;
+        }
+        .nav-brand { font-size: 1.5rem; font-weight: 800; color: var(--accent-purple); }
+        .nav-links { display: flex; gap: 10px; overflow-x: auto; align-items: center; padding-bottom: 5px;}
+        .nav-btn {
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 15px; 
+            font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0 var(--text-dark); 
+            transition: all 0.1s; font-family: var(--font-sans); font-size: 1rem; 
+            border-radius: 4px; text-decoration: none; color: var(--text-dark); white-space: nowrap;
+        }
+        .nav-btn:hover { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .nav-btn.active { background: var(--hl-cyan); box-shadow: 0 0 0 transparent; transform: translate(2px, 2px); }
+
+        /* Semantic Simulator Styles */
+        table { width: 100%; border-collapse: collapse; background: var(--white); border: 2px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); }
+        th, td { border: 1px solid var(--text-dark); padding: 8px 12px; text-align: left; font-family: var(--font-mono); font-size: 0.95rem;}
+        th { background: var(--text-dark); color: var(--white); font-family: var(--font-sans); }
+        
+        tr.new-row { animation: highlightRow 1s ease forwards; }
+        @keyframes highlightRow { 
+            0% { background-color: var(--hl-cyan); font-weight: bold; } 
+            100% { background-color: transparent; font-weight: normal; } 
+        }
+        
+        .code-container { max-height: 600px; overflow-y: auto; padding-right: 5px; border: 2px solid var(--text-dark); background: #fff; padding: 10px; border-radius: 4px; }
+        .code-container::-webkit-scrollbar { width: 8px; }
+        .code-container::-webkit-scrollbar-thumb { background: var(--text-dark); border-radius: 4px; }
+        
+        .code-row { 
+            display: flex; flex-direction: column; align-items: flex-start; padding: 8px 12px; margin-bottom: 6px; font-size: 0.95rem; gap: 4px; cursor: pointer; border-radius: 4px; border: 1px solid transparent;
+        }
+        .code-row:hover { background: #f8fafc; border-color: #cbd5e1; }
+        .code-row span { font-family: var(--font-mono); font-weight: bold; white-space: pre; }
+        .code-row .comment { align-self: flex-end; color: var(--accent-purple); font-size: 0.85rem; font-style: italic; font-family: var(--font-sans); font-weight: normal; }
+        .code-row.active { background-color: var(--hl-cyan); border-color: var(--text-dark); box-shadow: 3px 3px 0 var(--text-dark); transform: translate(-2px, -2px); }
+        .code-row.executed { opacity: 0.7; }
+
+        .compiler-note { background-color: #e0f2fe; border: 2px solid #0ea5e9; padding: 12px; margin-bottom: 15px; font-size: 0.95rem; border-radius: 4px; color: #0369a1; }
+        .return-stack-box { background-color: #fef3c7; border: 2px solid #d97706; padding: 12px; margin-bottom: 15px; font-size: 0.95rem; border-radius: 4px; color: #92400e; }
+        .stack-item { border-bottom: 1px dashed #d97706; padding: 4px 0; display: flex; justify-content: space-between; font-family: var(--font-mono); }
+        .match-badge { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; border: 1px solid #166534; margin-left: 10px;}
+    </style>
+</head>
+<body>
+
+ 
+
+    <div class="page-container">
+          <a href="index.html" class="back-link">← Back to Home</a>
+        <h1>Semantic Analysis</h1>
+        <div class="subtitle">AST-Based Context Validation & Compile-Time Checking</div>
+
+        <h2>Beyond Syntax: Discovering Intent</h2>
+        <p>While the Parser ensures the code "looks" right, the <strong>Semantic Analyzer</strong> ensures the code "is" right. It performs a recursive walk over the Abstract Syntax Tree (AST) to verify that identifiers are used within their proper context. It acts as the final gatekeeper before the compiler commits to generating machine instructions.</p>
+
+        <div class="retro-box">
+            <h3>Deep-Dive: Semantic Validation Rules</h3>
+            <ul>
+                <li><strong>Symbol Table Management:</strong> Built during compile time using <code>add_symbol()</code>. Variables are tracked by their <code>current_scope</code> level. There is only one static entry per variable in the table.</li>
+                <li><strong>Scope Cleanup:</strong> When leaving a block or function, <code>exit_scope()</code> loops backward to delete any variable belonging to that scope, keeping memory clean.</li>
+                <li><strong>The Return Stack Mechanism:</strong> Maintains a <b>LIFO Stack</b> (<code>return_stack</code> array) of expected return types.
+                    <ul>
+                        <li><strong>On Function Entry:</strong> The declared return type (e.g., <code>SYMBOL_INT</code>) is pushed via <code>push_return_type()</code>.</li>
+                        <li><strong>On Return Statement:</strong> Validates the type by calling <code>get_current_return_type()</code>.</li>
+                        <li><strong>On Function Exit:</strong> The type is removed via <code>pop_return_type()</code>.</li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+
+        <div class="dashed-box">
+            <h3>Compiler Time (Static) vs. Runtime (Dynamic)</h3>
+            <p>In our <code>binarySearch</code> example, the semantic analyzer ensures correct scoping using the <strong>Symbol Table</strong>. However, during execution, each recursive call creates a separate <strong>Activation Record</strong> on the call stack.</p>
+            <ul>
+                <li><strong>Symbol Table (Compile Time):</strong> Asks "What variables exist?". It records the blueprint of the function exactly once while walking the AST.</li>
+                <li><strong>Activation Record (Runtime):</strong> Asks "Where is the value stored right now?". Every recursive call gets its own copy of local variables like <code>mid</code> at runtime.</li>
+            </ul>
+        </div>
+
+        <h2>Interactive Semantic Simulator</h2>
+        <p>Watch how the compiler analyzes the AST strictly top-to-bottom. It evaluates <code>binarySearch</code> <b>once</b>, verifies its internal logic against the LIFO stack, calls <code>exit_scope()</code> to drop local variables, and then moves on to analyze <code>main()</code>.</p>
+
+        <div class="dashed-box">
+            <h3>Target Program (AST Input)</h3>
+<pre><code>int binarySearch(int arr[], int l, int r, int key) {
+    int mid;
+    if (l > r) { return 0-1; }
+    mid = (l + r) / 2;
+    if (arr[mid] == key) { return mid; } 
+    else {
+        if (key < arr[mid]) { return binarySearch(arr, l, mid - 1, key); }
+        else { return binarySearch(arr, mid + 1, r, key); }
+    }
+}
+
+int main() {
+    int arr[5] = {1, 3, 5, 7, 9};
+    int n = 5;
+    result = binarySearch(arr, 0, n-1, 12);
+    return 0;
+}</code></pre>
+        </div>
+
+        <div class="sim-container">
+            <div class="sim-left retro-box" style="margin:0;">
+                <div class="code-container" id="sem-code"></div>
+                <div class="controls">
+                    <button class="action-btn" id="btn-prev" onclick="setStep(semStep - 1)">← Back</button>
+                    <button class="action-btn" id="btn-next" onclick="setStep(semStep + 1)">Execute AST Walk ➔</button>
+                    <button class="action-btn" onclick="setStep(0)" style="background:#e5e7eb;">Reset</button>
+                </div>
+            </div>
+            
+            <div class="sim-right dashed-box" style="margin:0; height: fit-content; position: sticky; top: 90px;">
+                <div class="return-stack-box">
+                    <strong>Return Type Stack (LIFO):</strong>
+                    <div id="ret-stack-val" style="margin-top: 10px;"></div>
+                </div>
+                <h3>Active Symbol Table</h3>
+                <table>
+                    <thead><tr><th>Name</th><th>Type</th><th>Scope</th><th>Offset</th></tr></thead>
+                    <tbody id="sem-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const STEPS = [
+            // PARSING BINARY SEARCH
+            { c: "int binarySearch(int arr[], int l, int r, int key) {", m: "AST Walk: FuncDecl. push_return_type(INT). current_scope++.", a: (s, i) => { 
+                s.retStack.push('SYMBOL_INT'); 
+                s.sym.push({n:'binarySearch', t:'SYMBOL_FUNC', sc:'Global (0)', o:'Code', id:i});
+                s.sym.push({n:'arr', t:'SYMBOL_INT_PTR', sc:'Local (1)', o:'-8', id:i});
+                s.sym.push({n:'l', t:'SYMBOL_INT', sc:'Local (1)', o:'-16', id:i});
+                s.sym.push({n:'r', t:'SYMBOL_INT', sc:'Local (1)', o:'-24', id:i});
+                s.sym.push({n:'key', t:'SYMBOL_INT', sc:'Local (1)', o:'-32', id:i});
+            } },
+            { c: "    int mid;", m: "AST Walk: VarDecl. add_symbol('mid').", a: (s, i) => { 
+                s.sym.push({n:'mid', t:'SYMBOL_INT', sc:'Local (1)', o:'-40', id:i}); 
+            } },
+            { c: "    if (l > r) { return 0-1; }", m: "AST_RETURN: check_node() == get_current_return_type(). VALID.", a: (s) => { 
+                s.isMatch = true; 
+            } },
+            { c: "    mid = (l + r) / 2;", m: "AST_ASSIGNMENT: Check l, r, mid types in sem_table.", a: (s) => {} },
+            { c: "    if (arr[mid] == key) { return mid; }", m: "AST_RETURN: mid (INT) == get_current_return_type(). VALID.", a: (s) => { 
+                s.isMatch = true; 
+            } },
+            { c: "    else { return binarySearch(...); }", m: "AST_FUNC_CALL: Look up binarySearch in Global -> returns INT. VALID.", a: (s) => { 
+                s.isMatch = true; 
+            } },
+            
+            // CLEAN UP SCOPE 1
+            { c: "}", m: "End of Func. exit_scope() drops Local(1). pop_return_type().", a: (s) => { 
+                s.retStack.pop(); 
+                s.sym = s.sym.filter(x => x.sc === 'Global (0)'); 
+            } },
+
+            // PARSING MAIN
+            { c: "int main() {", m: "AST Walk: FuncDecl. push_return_type(INT). current_scope++.", a: (s, i) => { 
+                s.retStack.push('SYMBOL_INT'); 
+                s.sym.push({n:'main', t:'SYMBOL_FUNC', sc:'Global (0)', o:'Code', id:i}); 
+            } },
+            { c: "    int arr[5] = {1, 3, 5, 7, 9};", m: "AST_ARRAY_DECL: Set array_size = 5.", a: (s, i) => { 
+                s.sym.push({n:'arr', t:'SYMBOL_ARRAY', sc:'Local (1)', o:'-40', id:i}); 
+            } },
+            { c: "    int n = 5;", m: "AST_VAR_DECL: add_symbol('n').", a: (s, i) => { 
+                s.sym.push({n:'n', t:'SYMBOL_INT', sc:'Local (1)', o:'-48', id:i}); 
+            } },
+            { c: "    result = binarySearch(arr, 0, n-1, 12);", m: "AST_FUNC_CALL: Verify args match FUNC binarySearch in Global (0).", a: (s) => {} },
+            { c: "    return 0;", m: "AST_RETURN: 0 (INT) matches get_current_return_type(). VALID.", a: (s) => { 
+                s.isMatch = true; 
+            } },
+            
+            // FINISH COMPILING
+            { c: "}", m: "End of Func. exit_scope(). pop_return_type(). Analysis Complete.", a: (s) => { 
+                s.retStack.pop(); 
+                s.sym = s.sym.filter(x => x.sc === 'Global (0)'); 
+            } }
+        ];
+
+        let semStep = 0;
+
+        function calculateState(step) {
+            let s = { sym: [], retStack: [], isMatch: false };
+            for (let i = 0; i < step; i++) {
+                s.isMatch = false;
+                STEPS[i].a(s, i);
+            }
+            return s;
+        }
+
+        function setStep(newStep) {
+            semStep = Math.max(0, Math.min(STEPS.length, newStep));
+            const state = calculateState(semStep);
+            render(state);
+        }
+
+        function render(state) {
+            let html = "";
+            STEPS.forEach((line, i) => {
+                let cls = i < semStep ? "executed" : "";
+                if (i === semStep - 1) cls = "active";
+                let match = (i === semStep - 1 && state.isMatch) ? ' <span class="match-badge">✓ TYPE MATCHED</span>' : '';
+                html += `<div class="code-row ${cls}" onclick="setStep(${i+1})"><span>${line.c}${match}</span><span class="comment">; ${line.m}</span></div>`;
+            });
+            document.getElementById('sem-code').innerHTML = html;
+
+            let stackHtml = "";
+            if (state.retStack.length === 0) stackHtml = "<i>[ EMPTY ]</i>";
+            else {
+                for (let i = state.retStack.length - 1; i >= 0; i--) {
+                    let label = i === state.retStack.length - 1 ? "TOP (Active)" : "WAITING";
+                    stackHtml += `<div class="stack-item"><span>${label}:</span> <b>${state.retStack[i]}</b></div>`;
+                }
+            }
+            document.getElementById('ret-stack-val').innerHTML = stackHtml;
+
+            let tableHtml = "";
+            state.sym.forEach(s => {
+                let rowCls = (s.id === semStep - 1) ? "new-row" : "";
+                tableHtml += `<tr class="${rowCls}"><td><strong>${s.n}</strong></td><td><span style="color:var(--accent-purple)">${s.t}</span></td><td>${s.sc}</td><td>${s.o==='Code'?'Seg':s.o+'(%rbp)'}</td></tr>`;
+            });
+            document.getElementById('sem-table').innerHTML = tableHtml || "<tr><td colspan='4' style='text-align:center'>Symbol Table Cleared</td></tr>";
+            
+            document.getElementById('btn-prev').disabled = semStep === 0;
+            document.getElementById('btn-next').disabled = semStep === STEPS.length;
+        }
+
+        setStep(0);
+    </script>
+</body>
+</html>

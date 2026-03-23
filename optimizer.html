@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>IR Optimization - Viz-Compiler</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+ 
+    <div class="page-container">
+       
+          <a href="index.html" class="back-link">← Back to Home</a>
+        
+        <h1>IR Optimization</h1>
+        <div class="subtitle">Making Code Faster and Smaller</div>
+
+        <h2>Mathematical Intelligence</h2>
+        <p>Because we use a "dumb" Code Generator that blindly translates lines 1-to-1 into assembly, we have to make our code "smart" during the IR phase. Optimization passes analyze the IR instructions and rewrite them to be more efficient without changing the final output of the program.</p>
+        
+        <div class="dashed-box">
+            <h3>Our Optimization Passes</h3>
+            <ul>
+                <li><strong>Constant Propagation:</strong> If a variable is assigned a constant number (<code>x = 5</code>), the optimizer replaces all future uses of <code>x</code> with the number <code>5</code>.</li>
+                <li><strong>Constant Folding:</strong> If an instruction does math with two raw numbers (<code>t0 = 5 + 10</code>), the compiler just does the math immediately and replaces the instruction with the result (<code>t0 = 15</code>).</li>
+                <li><strong>Strength Reduction:</strong> Replaces "expensive" CPU operations with cheaper ones. For example, replacing a multiplication by a power of two (<code>x * 4</code>) with a hyper-fast bitwise shift (<code>x << 2</code>).</li>
+                <li><strong>Dead Code Elimination:</strong> Scans the IR for variables or temporaries that are created but never actually used later in the program. It deletes these instructions entirely to save memory and CPU cycles.</li>
+            </ul>
+        </div>
+
+        <h2>Interactive Optimizer Simulator</h2>
+        <p>Click through the optimization passes below. Notice how propagation and folding have a cascading effect, creating unused "dead code" that we can delete at the very end!</p>
+
+        <div class="sim-container">
+            <div class="sim-left retro-box" style="margin:0;">
+                <h3>Optimization Passes</h3>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    <button class="action-btn" onclick="applyOpt('prop')">1. Constant Propagation</button>
+                    <button class="action-btn" onclick="applyOpt('fold')">2. Constant Folding (Pass 1)</button>
+                    <button class="action-btn" onclick="applyOpt('strength')">3. Strength Reduction</button>
+                    <button class="action-btn" onclick="applyOpt('fold2')">4. Constant Folding (Pass 2)</button>
+                    <button class="action-btn" onclick="applyOpt('dead')">5. Identify Dead Code</button>
+                    <button class="action-btn" onclick="applyOpt('final')" style="background: var(--text-dark); color: white;">6. Clean Dead Code (Final)</button>
+                    <button class="action-btn" onclick="initOpt()" style="margin-top:15px; background:#e5e7eb;">↺ Reset IR</button>
+                </div>
+            </div>
+            <div class="sim-right dashed-box" style="margin:0;">
+                <h3>IR State</h3>
+                <div id="opt-ir-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let optState = [];
+        // The Data state machine exactly modeling your C compiler's behavior
+        const OPT_DATA = {
+            init: [ { t: "x = 5", s: '' }, { t: "y = 10", s: '' }, { t: "z = x + y", s: '' }, { t: "ans = z * 4", s: '' }, { t: "unused_var = 99", s: '' }, { t: "PRINT ans", s: '' } ],
+            prop: [ { t: "x = 5", s: '' }, { t: "y = 10", s: '' }, { t: "z = 5 + 10", s: 'modified' }, { t: "ans = z * 4", s: '' }, { t: "unused_var = 99", s: '' }, { t: "PRINT ans", s: '' } ],
+            fold: [ { t: "x = 5", s: '' }, { t: "y = 10", s: '' }, { t: "z = 15", s: 'modified' }, { t: "ans = 15 * 4", s: 'modified' }, { t: "unused_var = 99", s: '' }, { t: "PRINT ans", s: '' } ],
+            strength: [ { t: "x = 5", s: '' }, { t: "y = 10", s: '' }, { t: "z = 15", s: '' }, { t: "ans = 15 << 2", s: 'modified' }, { t: "unused_var = 99", s: '' }, { t: "PRINT ans", s: '' } ],
+            fold2:[ { t: "x = 5", s: '' }, { t: "y = 10", s: '' }, { t: "z = 15", s: '' }, { t: "ans = 60", s: 'modified' }, { t: "unused_var = 99", s: '' }, { t: "PRINT ans", s: '' } ],
+            dead: [ { t: "x = 5", s: 'dead' }, { t: "y = 10", s: 'dead' }, { t: "z = 15", s: 'dead' }, { t: "ans = 60", s: '' }, { t: "unused_var = 99", s: 'dead' }, { t: "PRINT ans", s: '' } ],
+            final:[ { t: "ans = 60", s: 'modified' }, { t: "PRINT ans", s: '' } ]
+        };
+
+        function initOpt() { applyOpt('init'); }
+        
+        function applyOpt(phase) { 
+            optState = OPT_DATA[phase]; 
+            let html = "";
+            optState.forEach(row => html += `<div class="ir-row ${row.s}">${row.t}</div>`);
+            document.getElementById('opt-ir-container').innerHTML = html;
+        }
+
+        initOpt();
+    </script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Viz-Compiler | Home</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="page-container">
+        <h1>Viz-Compiler</h1>
+        <div class="subtitle">An Educational, Multi-Pass Compiler Built from Scratch</div>
+
+        <div class="retro-box">
+            <h3>System Architecture</h3>
+            <p>The Viz-Compiler is a custom language toolchain designed to visually demonstrate how high-level code transforms into raw hardware instructions. It targets the <strong>x86-64 System V ABI</strong> using a strict stack-based "Memory-to-Memory" model.</p>
+            <p>Our philosophy prioritizes <strong>correctness, stability, and observability</strong> over micro-optimizations like aggressive register allocation. Every phase of this compiler outputs observable artifacts.</p>
+        </div>
+
+        <h2>Compilation Pipeline (Sub-Topics)</h2>
+        <p>Explore each phase of the compiler. Each page contains deep architectural explanations and interactive simulators demonstrating the algorithms at work.</p>
+
+        <div class="dashed-box">
+            <ul>
+                <li><a href="lexer.html" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-purple);"> Lexical Analysis</a> - Tokenizing raw text streams.</li>
+                <br>
+                <li><a href="parser.html" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-purple);"> Syntax Analysis (Parser)</a> - Validating grammar and building the AST.</li>
+                <br>
+                <li><a href="semantic.html" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-purple);"> Semantic Analysis</a> - Scope resolution and Symbol Table generation.</li>
+                <br>
+                <li><a href="ir.html" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-purple);"> IR Generation</a> - Flattening the AST into 3-Address Code (Quads).</li>
+                <br>
+                <li><a href="optimizer.html" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-purple);"> IR Optimization</a> - Constant folding, propagation, and strength reduction.</li>
+                <br>
+                <li><a href="codegen.html" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-purple);"> Code Generation</a> - Translating Quads to Assembly and managing the RAM Stack.</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

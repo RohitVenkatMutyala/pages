@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Syntax Analysis - Viz-Compiler</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Navbar Styles */
+        .navbar {
+            background-color: var(--white); border-bottom: 4px solid var(--text-dark);
+            padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 0px rgba(0,0,0,0.1); flex-wrap: wrap; gap: 10px;
+        }
+        .nav-brand { font-size: 1.5rem; font-weight: 800; color: var(--accent-purple); }
+        .nav-links { display: flex; gap: 10px; overflow-x: auto; align-items: center; padding-bottom: 5px;}
+        .nav-btn {
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 15px; 
+            font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0 var(--text-dark); 
+            transition: all 0.1s; font-family: var(--font-sans); font-size: 1rem; 
+            border-radius: 4px; text-decoration: none; color: var(--text-dark); white-space: nowrap;
+        }
+        .nav-btn:hover { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .nav-btn.active { background: var(--hl-cyan); box-shadow: 0 0 0 transparent; transform: translate(2px, 2px); }
+
+        /* Shared Simulator Styles */
+        .panel { background: var(--white); border: 2px solid var(--text-dark); box-shadow: 4px 4px 0px var(--text-dark); padding: 20px; border-radius: 4px; flex: 1; }
+        h3 { margin-top: 0; border-bottom: 2px dotted var(--text-dark); padding-bottom: 10px; }
+        .controls { display: flex; gap: 10px; margin-top: 15px; }
+        
+        .code-container { max-height: 400px; overflow-y: auto; padding-right: 5px; }
+        .code-row { display: flex; flex-direction: column; align-items: flex-start; padding: 8px 12px; margin-bottom: 6px; font-size: 0.95rem; cursor: pointer; border-radius: 4px; border: 1px solid transparent; font-family: var(--font-mono); font-weight: bold;}
+        .code-row:hover { background: #f8fafc; border-color: #cbd5e1; }
+        .code-row.active { background-color: var(--hl-cyan); border-color: var(--text-dark); box-shadow: 3px 3px 0 var(--text-dark); transform: translate(-2px, -2px); }
+        .code-row.executed { opacity: 0.6; }
+        .code-row .comment { align-self: flex-end; color: var(--accent-purple); font-size: 0.85rem; font-style: italic; font-family: var(--font-sans); font-weight: normal; margin-top: 4px;}
+
+        /* Proper Tree Styles (Used in both Phase 1 and 2) */
+        .tree-node { font-family: var(--font-mono); padding: 6px 10px; margin: 4px 0; border: 2px solid transparent; border-radius: 4px; transition: all 0.3s ease; position: relative; font-size: 0.95rem; }
+        .indent-1 { margin-left: 20px; border-left: 2px solid #ccc; }
+        .indent-2 { margin-left: 40px; border-left: 2px solid #ccc; }
+        .indent-3 { margin-left: 60px; border-left: 2px solid #ccc; }
+        .indent-4 { margin-left: 80px; border-left: 2px solid #ccc; }
+        .indent-5 { margin-left: 100px; border-left: 2px solid #ccc; }
+        .state-visiting { background-color: var(--hl-cyan); border-color: var(--text-dark); font-weight: bold; transform: translate(-2px, -2px); box-shadow: 3px 3px 0 var(--text-dark); }
+        .state-resolved { background-color: var(--hl-yellow); border-color: var(--text-dark); font-weight: bold; color: #444; }
+        .step-text { font-family: var(--font-sans); font-size: 1rem; margin-top: 20px; min-height: 80px; padding: 10px; background: #f8fafc; border-radius: 4px; border: 1px dashed #cbd5e1;}
+    </style>
+</head>
+<body>
+
+
+    <div class="page-container">
+          <a href="index.html" class="back-link">← Back to Home</a>
+        <h1>Syntax Analysis (The Parser)</h1>
+        <div class="subtitle">Validating Structure and Building the AST</div>
+
+        <p>Once the Lexer has converted the raw text into a stream of tokens, the <strong>Parser</strong> takes over. Its job is to verify that these tokens follow the structural rules of our language, known as the Grammar.</p>
+        <p>If the grammar is valid, the Parser groups the tokens to build an <strong>Abstract Syntax Tree (AST)</strong>. This tree strips away formatting (like semicolons and braces) and represents the pure hierarchical logic of the code.</p>
+
+        <h2>VizLang Context-Free Grammar Rules</h2>
+        <div class="retro-box">
+            <p>Our compiler uses Bison (Yacc) to enforce these rules. Here is the actual structured grammar defined in our <code>parser.y</code> file:</p>
+            <pre>
+Program        -> FunctionList
+FunctionList   -> Function | FunctionList Function
+
+Function       -> Type Identifier '(' ParamList ')' Block
+Type           -> 'int' | 'void'
+ParamList      -> ε | 'int' Id | 'int' Id '[' ']' | 'int' '*' Id | ParamList ',' ...
+Block          -> '{' StatementList '}'
+
+StatementList  -> ε | StatementList Statement
+Statement      -> VarDecl | ReturnStmt | IfStmt | WhileStmt | ForStmt
+                | 'repeat' '(' Expr ')' Block
+                | 'sort' '(' Identifier ',' Expr ')' ';' 
+                | 'printarray' '(' Identifier ')' ';' 
+                | 'print' '(' Expr | String ')' ';'
+                | 'input' '(' Identifier ')' ';' 
+                | Expr ';'
+
+VarDecl        -> 'int' Id ';' 
+                | 'int' Id '=' Expr ';'
+                | 'int' Id '[' Number ']' ['=' '{' ArgList '}'] ';'
+                | 'int' '*' Id ['=' Expr] ';'
+
+Expr           -> Number | Identifier 
+                | '&' Identifier | '*' Expr | Identifier '[' Expr ']' 
+                | Identifier '(' ArgList ')'
+                | Expr '+' Expr | Expr '-' Expr | Expr '*' Expr | Expr '/' Expr
+                | Expr '==' Expr | Expr '<' Expr | Expr '&&' Expr | Expr '||' Expr
+                | Expr '=' Expr | '(' Expr ')'</pre>
+        </div>
+
+        <div class="retro-box" style="background-color: var(--white); border-color: #6b4c8a;">
+            <h3 style="color: #6b4c8a; border-bottom-color: #6b4c8a;">The Precedence Rule-of-Thumb</h3>
+            <p>In an AST, <strong>Depth = Priority</strong>. Our Parser uses the following order to decide tree depth:</p>
+            <ol>
+                <li><strong>Grouping:</strong> <code>( )</code> creates a protected sub-shell.</li>
+                <li><strong>Multiplicative:</strong> <code>*</code> and <code>/</code> are pushed deeper than addition.</li>
+                <li><strong>Additive:</strong> <code>+</code> and <code>-</code> wait for multiplication to finish.</li>
+                <li><strong>Assignment:</strong> <code>=</code> is the root, waiting for everything else to resolve.</li>
+            </ol>
+        </div>
+
+        <h2>Phase 1: Building the AST (Token Stream)</h2>
+        <p>Watch how the parser consumes tokens left-to-right to build a hierarchical tree structure. Notice how it handles <strong>Operator Precedence</strong> by forcing the <code>*</code> node deeper into the tree than the <code>+</code> node!</p>
+        <p>Target Code: <code style="font-size:1.2rem; color: var(--accent-purple);">int result = a + b * (c - 2);</code></p>
+
+        <div class="dashed-box sim-container" style="align-items: flex-start;">
+            <div class="panel">
+                <h3>Token Stream (Input)</h3>
+                <div class="code-container" id="builder-code-panel"></div>
+                <div class="controls">
+                    <button class="action-btn" id="build-btn-prev" onclick="setBuildStep(buildCurrent - 1)" style="width:100%">← Back</button>
+                    <button class="action-btn" id="build-btn-next" onclick="setBuildStep(buildCurrent + 1)" style="width:100%">Next Token ➔</button>
+                </div>
+            </div>
+            <div class="panel" style="flex: 1.5;">
+                <h3>AST Builder (Output)</h3>
+                <div id="builder-ast-panel" style="min-height: 400px; padding: 10px;"></div>
+            </div>
+        </div>
+
+        <hr style="border: 2px dashed var(--text-dark); margin: 40px 0;">
+
+        <h2>Phase 2: Executing the AST (DFS Post-Order Traversal)</h2>
+        <p>The compiler evaluates the tree using a <strong>Depth-First Search (DFS)</strong> in <strong>Post-Order</strong>. It must "visit" the bottom-most leaves first because a parent operator cannot calculate its value until its children are fully resolved.</p>
+
+        <div class="dashed-box sim-container" style="align-items: flex-start;">
+            <div class="panel">
+                <h3>Execution Engine</h3>
+                <p>Target: <code style="font-size: 1.1rem; color: var(--accent-purple);">int result = a + b * (c - 2);</code></p>
+                <div class="controls" style="flex-direction: column; gap: 10px;">
+                    <button class="action-btn" onclick="nextExecStep()" id="exec-btn-next" style="width: 100%;">Step Forward ➔</button>
+                    <button class="action-btn" onclick="resetExec()" style="background: #e5e7eb; width: 100%; color: var(--text-dark);">↺ Reset</button>
+                </div>
+                <div class="step-text" id="exec-explanation"><strong>Status:</strong> Waiting to start execution...</div>
+            </div>
+
+            <div class="panel" style="flex: 1.5;">
+                <h3>Abstract Syntax Tree</h3>
+                <div id="exec-tree-container">
+                    <div class="tree-node" id="n-var">VarDecl (int)</div>
+                    <div class="tree-node indent-1" id="n-assign">└─ Assign (=)</div>
+                    <div class="tree-node indent-2" id="n-id-res">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2" id="n-op-add">&nbsp;&nbsp;└─ BinaryOp (+)</div>
+                    <div class="tree-node indent-3" id="n-id-a">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (a)</div>
+                    <div class="tree-node indent-3" id="n-op-mul">&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (*)</div>
+                    <div class="tree-node indent-4" id="n-id-b">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (b)</div>
+                    <div class="tree-node indent-4" id="n-op-sub">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (-)</div>
+                    <div class="tree-node indent-5" id="n-id-c">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (c)</div>
+                    <div class="tree-node indent-5" id="n-num-2">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Number (2)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // PHASE 1: AST BUILDER LOGIC (PROPER TREE)
+        // ==========================================
+        const buildSteps = [
+            { t: "Start", m: "Waiting for tokens...", ast: `<i>Empty Tree</i>` },
+            
+            { t: "int", m: "Matched Type.", 
+              ast: `<div class="tree-node state-visiting">VarDecl (int)</div>` },
+            
+            { t: "result", m: "Matched Identifier.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1 state-visiting">└─ Identifier (result)</div>` },
+            
+            { t: "=", m: "Matched '='. Assign becomes parent of Identifier.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1 state-visiting">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;└─ Identifier (result)</div>` },
+            
+            { t: "a", m: "Matched Identifier. Building right side of Assign.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2 state-visiting">&nbsp;&nbsp;└─ Identifier (a)</div>` },
+            
+            { t: "+", m: "Matched '+'. Building BinaryOp.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2 state-visiting">&nbsp;&nbsp;└─ BinaryOp (+)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;└─ Identifier (a)</div>` },
+            
+            { t: "b", m: "Matched Identifier.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;└─ BinaryOp (+)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (a)</div>
+                    <div class="tree-node indent-3 state-visiting">&nbsp;&nbsp;&nbsp;&nbsp;└─ Identifier (b)</div>` },
+            
+            { t: "*", m: "PRECEDENCE! '*' binds tighter than '+'. It steals 'b' to be its left child.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;└─ BinaryOp (+)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (a)</div>
+                    <div class="tree-node indent-3 state-visiting">&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (*)</div>
+                    <div class="tree-node indent-4">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Identifier (b)</div>` },
+            
+            { t: "(", m: "Matched '('. Opening a grouped sub-expression.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;└─ BinaryOp (+)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (a)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (*)</div>
+                    <div class="tree-node indent-4">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (b)</div>
+                    <div class="tree-node indent-4 state-visiting">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ <span style="color:#6b4c8a; font-style:italic;">[ Waiting for expression... ]</span></div>` },
+            
+            { t: "c", m: "Matched Identifier inside parentheses.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;└─ BinaryOp (+)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (a)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (*)</div>
+                    <div class="tree-node indent-4">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (b)</div>
+                    <div class="tree-node indent-4 state-visiting">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Identifier (c)</div>` },
+            
+            { t: "-", m: "Matched '-'. Building inner BinaryOp.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;└─ BinaryOp (+)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (a)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (*)</div>
+                    <div class="tree-node indent-4">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (b)</div>
+                    <div class="tree-node indent-4 state-visiting">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (-)</div>
+                    <div class="tree-node indent-5">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Identifier (c)</div>` },
+            
+            { t: "2", m: "Matched Number. Completing inner BinaryOp.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;└─ BinaryOp (+)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (a)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (*)</div>
+                    <div class="tree-node indent-4">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (b)</div>
+                    <div class="tree-node indent-4">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (-)</div>
+                    <div class="tree-node indent-5">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (c)</div>
+                    <div class="tree-node indent-5 state-visiting">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Number (2)</div>` },
+            
+            { t: ")", m: "Matched ')'. Sub-expression closed! Parentheses imply structure.", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;└─ BinaryOp (+)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (a)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (*)</div>
+                    <div class="tree-node indent-4">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (b)</div>
+                    <div class="tree-node indent-4">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (-)</div>
+                    <div class="tree-node indent-5">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (c)</div>
+                    <div class="tree-node indent-5">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Number (2)</div>` },
+            
+            { t: ";", m: "Matched ';'. Statement complete!", 
+              ast: `<div class="tree-node">VarDecl (int)</div>
+                    <div class="tree-node indent-1">└─ Assign (=)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;├─ Identifier (result)</div>
+                    <div class="tree-node indent-2">&nbsp;&nbsp;└─ BinaryOp (+)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (a)</div>
+                    <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (*)</div>
+                    <div class="tree-node indent-4">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (b)</div>
+                    <div class="tree-node indent-4">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ BinaryOp (-)</div>
+                    <div class="tree-node indent-5">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (c)</div>
+                    <div class="tree-node indent-5">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Number (2)</div>
+                    <div style="margin-top:15px; color:#10b981; font-weight:bold; font-size:1.2rem;">✓ AST Successfully Built</div>` }
+        ];
+
+        let buildCurrent = 0;
+
+        function setBuildStep(step) {
+            buildCurrent = Math.max(0, Math.min(buildSteps.length - 1, step));
+            
+            let html = '';
+            buildSteps.forEach((s, i) => {
+                if (i === 0) return;
+                let cls = i < buildCurrent ? "executed" : "";
+                if (i === buildCurrent) cls = "active";
+                html += `<div class="code-row ${cls}" onclick="setBuildStep(${i})"><span>TOKEN: ${s.t}</span><span class="comment">; ${s.m}</span></div>`;
+            });
+            document.getElementById('builder-code-panel').innerHTML = html;
+
+            document.getElementById('build-btn-prev').disabled = buildCurrent === 0;
+            document.getElementById('build-btn-next').disabled = buildCurrent === buildSteps.length - 1;
+
+            document.getElementById('builder-ast-panel').innerHTML = buildSteps[buildCurrent].ast;
+
+            // Scroll active token into view
+            const activeEl = document.querySelector('#builder-code-panel .code-row.active');
+            if (activeEl) activeEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+
+        setBuildStep(0);
+
+
+        // ==========================================
+        // PHASE 2: AST EXECUTION LOGIC (DFS POST-ORDER)
+        // ==========================================
+        const execSteps = [
+            { text: "DFS Start: The compiler dives to the far left. It reaches 'a', but cannot process the '+' yet. It must explore the entire right subtree first.", visit: ['n-op-add', 'n-id-a'], resolve: [] },
+            { text: "DFS Deepening: It moves into the multiplication branch, then dives deep into the parentheses. It reaches the deepest point: BinaryOp (-).", visit: ['n-op-mul', 'n-op-sub', 'n-id-c', 'n-num-2'], resolve: [] },
+            { text: "Post-Order Step 1: Subtraction children ('c' and '2') are leaf nodes. They return their values. The (-) node is now RESOLVED.", visit: [], resolve: ['n-op-sub', 'n-id-c', 'n-num-2'] },
+            { text: "Post-Order Step 2: Now that the right child of '*' is resolved, it multiplies 'b' by that result. The (*) node is now RESOLVED.", visit: ['n-id-b'], resolve: ['n-op-mul', 'n-id-b'] },
+            { text: "Post-Order Step 3: Now the '+' node has values from both sides (the variable 'a' and the result of the multiplication). It adds them. The (+) node is RESOLVED.", visit: [], resolve: ['n-op-add', 'n-id-a'] },
+            { text: "Final Step: The Assignment (=) node takes the fully resolved right-hand side and maps it to the Identifier 'result'.", visit: ['n-assign', 'n-id-res', 'n-var'], resolve: [] },
+            { text: "DFS Complete: The tree has been traversed bottom-up. The mathematical logic is fully executed.", visit: [], resolve: ['n-assign', 'n-id-res', 'n-var'] }
+        ];
+
+        let execCurrent = -1;
+
+        function nextExecStep() {
+            if (execCurrent >= execSteps.length - 1) return;
+            execCurrent++;
+            
+            document.querySelectorAll('#exec-tree-container .tree-node').forEach(n => n.classList.remove('state-visiting'));
+
+            const step = execSteps[execCurrent];
+            document.getElementById('exec-explanation').innerHTML = `<strong>Step ${execCurrent + 1}:</strong> ${step.text}`;
+            
+            step.visit.forEach(id => document.getElementById(id).classList.add('state-visiting'));
+            step.resolve.forEach(id => {
+                document.getElementById(id).classList.remove('state-visiting');
+                document.getElementById(id).classList.add('state-resolved');
+            });
+
+            if (execCurrent === execSteps.length - 1) {
+                document.getElementById('exec-btn-next').innerText = "Finished";
+                document.getElementById('exec-btn-next').disabled = true;
+            }
+        }
+
+        function resetExec() {
+            execCurrent = -1;
+            document.getElementById('exec-explanation').innerHTML = "<strong>Status:</strong> Waiting to start execution...";
+            document.getElementById('exec-btn-next').innerText = "Step Forward ➔";
+            document.getElementById('exec-btn-next').disabled = false;
+            document.querySelectorAll('#exec-tree-container .tree-node').forEach(n => {
+                n.classList.remove('state-visiting');
+                n.classList.remove('state-resolved');
+            });
+        }
+    </script>
+</body>
+</html>

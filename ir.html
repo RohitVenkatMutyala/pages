@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>IR Generation - Viz-Compiler</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Navbar Styles */
+        .navbar {
+            background-color: var(--white); border-bottom: 4px solid var(--text-dark);
+            padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 0px rgba(0,0,0,0.1); flex-wrap: wrap; gap: 10px;
+        }
+        .nav-brand { font-size: 1.5rem; font-weight: 800; color: var(--accent-purple); }
+        .nav-links { display: flex; gap: 10px; overflow-x: auto; align-items: center; padding-bottom: 5px;}
+        .nav-btn {
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 15px; 
+            font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0 var(--text-dark); 
+            transition: all 0.1s; font-family: var(--font-sans); font-size: 1rem; 
+            border-radius: 4px; text-decoration: none; color: var(--text-dark); white-space: nowrap;
+        }
+        .nav-btn:hover { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .nav-btn.active { background: var(--hl-cyan); box-shadow: 0 0 0 transparent; transform: translate(2px, 2px); }
+
+        /* Shared Simulator Styles */
+        .panel { background: var(--white); border: 2px solid var(--text-dark); box-shadow: 4px 4px 0px var(--text-dark); padding: 20px; border-radius: 4px; flex: 1; }
+        h3 { margin-top: 0; border-bottom: 2px dotted var(--text-dark); padding-bottom: 10px; }
+        .controls { display: flex; gap: 10px; margin-top: 15px; }
+
+        /* Tree Styles */
+        .tree-node { font-family: var(--font-mono); padding: 6px 10px; margin: 4px 0; border: 2px solid transparent; border-radius: 4px; transition: all 0.3s ease; position: relative; font-size: 0.95rem; }
+        .indent-1 { margin-left: 20px; border-left: 2px solid #ccc; }
+        .indent-2 { margin-left: 40px; border-left: 2px solid #ccc; }
+        .indent-3 { margin-left: 60px; border-left: 2px solid #ccc; }
+        
+        .state-visiting { background-color: var(--hl-cyan); border-color: var(--text-dark); font-weight: bold; transform: translate(-2px, -2px); box-shadow: 3px 3px 0 var(--text-dark); }
+        .state-resolved { background-color: var(--hl-yellow); border-color: var(--text-dark); font-weight: bold; color: #444; }
+        
+        /* IR Output Styles */
+        .ir-row { font-family: var(--font-mono); font-size: 1.1rem; padding: 8px 12px; border-bottom: 1px dashed #ccc; font-weight: bold; transition: all 0.3s;}
+        .ir-row.modified { background-color: #dcfce7; color: #166534; border-left: 4px solid #166534; animation: slideIn 0.3s ease forwards; }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+    </style>
+</head>
+<body>
+
+
+    <div class="page-container">
+        <a href="index.html" class="back-link">← Back to Home</a>
+        
+        <h1>Intermediate Representation (IR)</h1>
+        <div class="subtitle">Flattening the AST into 3-Address Code</div>
+
+        <h2>Bridging the Gap</h2>
+        <p>Translating a highly nested Abstract Syntax Tree directly into x86-64 assembly is incredibly difficult. Instead, modern compilers translate the AST into an <strong>Intermediate Representation (IR)</strong>. This acts as a universal bridge between the front-end (Parser) and the back-end (Code Generator).</p>
+        
+        <div class="retro-box">
+            <h3>Under the Hood (ir.c Logic)</h3>
+            <p>Your compiler uses a <strong>Post-Order Walk</strong> (<code>walk_ast</code>) to generate IR. Here is exactly what happens behind the scenes:</p>
+            <ul>
+                <li><strong>3-Address Code (Quads):</strong> Using the <code>emit()</code> function, instructions are broken down to contain a maximum of three addresses (e.g., <code>arg1 OP arg2 = result</code>). This perfectly mimics real CPU registers.</li>
+                <li><strong>Compiler Temporaries:</strong> Because hardware cannot calculate <code>x = (a + b) * (c - d)</code> in one step, your <code>new_temp()</code> function creates temporary variables (<code>t0</code>, <code>t1</code>) to hold the results of intermediate calculations.</li>
+            </ul>
+        </div>
+
+        <h2>Interactive IR Generator</h2>
+        <p>Watch how the compiler traverses the complex AST from the bottom-up. Every time an operator resolves, it <code>emit()</code>s a Quad instruction and replaces the AST branch with a single Temporary Variable!</p>
+        <p>Target Code: <code style="font-size:1.2rem; color: var(--accent-purple);">x = (a + b) * (c - d);</code></p>
+
+        <div class="dashed-box sim-container" style="align-items: flex-start;">
+            <div class="panel">
+                <h3>AST Collapse (Input)</h3>
+                <div id="irgen-ast" style="min-height: 250px;"></div>
+                <div class="controls" style="flex-direction: column; gap: 10px;">
+                    <button class="action-btn" onclick="stepIrGen()" id="ir-btn-next" style="width:100%">Generate Next Quad ➔</button>
+                    <button class="action-btn" onclick="initIrGen()" style="background:#e5e7eb; width:100%; color: var(--text-dark);">↺ Reset</button>
+                </div>
+            </div>
+            
+            <div class="panel" style="flex: 1.2;">
+                <h3>Generated IR Stream (Output)</h3>
+                <div id="irgen-out" style="background-color: var(--bg-color); padding: 15px; border: 2px solid var(--text-dark); border-radius: 4px; min-height: 250px;"></div>
+            </div>
+        </div>
+
+    
+    </div>
+
+    <script>
+        // Array of step states.
+        // The AST is represented using the proper nested tree formatting.
+        const IRGEN_STEPS = [
+            { 
+                // Step 0: Initial State
+                ast: `<div class="tree-node">Assign (=)</div>
+                      <div class="tree-node indent-1">├─ Identifier (x)</div>
+                      <div class="tree-node indent-1">└─ BinaryOp (*)</div>
+                      <div class="tree-node indent-2">&nbsp;&nbsp;├─ BinaryOp (+)</div>
+                      <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (a)</div>
+                      <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;└─ Identifier (b)</div>
+                      <div class="tree-node indent-2">&nbsp;&nbsp;└─ BinaryOp (-)</div>
+                      <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (c)</div>
+                      <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;└─ Identifier (d)</div>`, 
+                ir: null 
+            },
+            { 
+                // Step 1: Resolve '+' branch
+                ast: `<div class="tree-node">Assign (=)</div>
+                      <div class="tree-node indent-1">├─ Identifier (x)</div>
+                      <div class="tree-node indent-1">└─ BinaryOp (*)</div>
+                      <div class="tree-node indent-2 state-visiting">&nbsp;&nbsp;├─ Temporary (t0)</div>
+                      <div class="tree-node indent-2">&nbsp;&nbsp;└─ BinaryOp (-)</div>
+                      <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;├─ Identifier (c)</div>
+                      <div class="tree-node indent-3">&nbsp;&nbsp;&nbsp;&nbsp;└─ Identifier (d)</div>`, 
+                ir: "t0 = a + b" 
+            },
+            { 
+                // Step 2: Resolve '-' branch
+                ast: `<div class="tree-node">Assign (=)</div>
+                      <div class="tree-node indent-1">├─ Identifier (x)</div>
+                      <div class="tree-node indent-1">└─ BinaryOp (*)</div>
+                      <div class="tree-node indent-2 state-resolved">&nbsp;&nbsp;├─ Temporary (t0)</div>
+                      <div class="tree-node indent-2 state-visiting">&nbsp;&nbsp;└─ Temporary (t1)</div>`, 
+                ir: "t1 = c - d" 
+            },
+            { 
+                // Step 3: Resolve '*' branch
+                ast: `<div class="tree-node">Assign (=)</div>
+                      <div class="tree-node indent-1">├─ Identifier (x)</div>
+                      <div class="tree-node indent-1 state-visiting">└─ Temporary (t2)</div>`, 
+                ir: "t2 = t0 * t1" 
+            },
+            { 
+                // Step 4: Resolve '=' branch
+                ast: `<div class="tree-node state-resolved" style="text-align:center; padding:20px; font-size: 1.2rem;">AST Fully Flattened!</div>`, 
+                ir: "x = t2" 
+            }
+        ];
+        
+        let irGenStep = 0;
+
+        function initIrGen() { 
+            irGenStep = 0; 
+            document.getElementById('ir-btn-next').disabled = false;
+            document.getElementById('ir-btn-next').innerText = "Generate Next Quad ➔";
+            updateIrGenUI(); 
+        }
+
+        function stepIrGen() { 
+            if(irGenStep < IRGEN_STEPS.length - 1) { 
+                irGenStep++; 
+                updateIrGenUI(); 
+            }
+            if (irGenStep === IRGEN_STEPS.length - 1) {
+                document.getElementById('ir-btn-next').disabled = true;
+                document.getElementById('ir-btn-next').innerText = "IR Generation Complete";
+            }
+        }
+        
+        function updateIrGenUI() {
+            // Update AST display
+            document.getElementById('irgen-ast').innerHTML = IRGEN_STEPS[irGenStep].ast;
+            
+            // Update IR Output Display
+            let out = "";
+            if (irGenStep === 0) {
+                out = "<p style='color: #777; font-family: var(--font-sans); font-style: italic;'>Waiting for walk_ast()...</p>";
+            } else {
+                for(let i = 1; i <= irGenStep; i++) {
+                    let cls = i === irGenStep ? "modified" : "";
+                    out += `<div class="ir-row ${cls}">${IRGEN_STEPS[i].ir}</div>`;
+                }
+            }
+            document.getElementById('irgen-out').innerHTML = out;
+        }
+
+        initIrGen();
+    </script>
+</body>
+</html>

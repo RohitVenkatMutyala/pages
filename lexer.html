@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lexical Analysis - Viz-Compiler</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Navbar Styles */
+        .navbar {
+            background-color: var(--white); border-bottom: 4px solid var(--text-dark);
+            padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 0px rgba(0,0,0,0.1); flex-wrap: wrap; gap: 10px;
+        }
+        .nav-brand { font-size: 1.5rem; font-weight: 800; color: var(--accent-purple); }
+        .nav-links { display: flex; gap: 10px; overflow-x: auto; align-items: center; padding-bottom: 5px;}
+        .nav-btn {
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 15px; 
+            font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0 var(--text-dark); 
+            transition: all 0.1s; font-family: var(--font-sans); font-size: 1rem; 
+            border-radius: 4px; text-decoration: none; color: var(--text-dark); white-space: nowrap;
+        }
+        .nav-btn:hover { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .nav-btn.active { background: var(--hl-cyan); box-shadow: 0 0 0 transparent; transform: translate(2px, 2px); }
+
+        /* Lexer Specific Styles */
+        .token-container { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+        .token {
+            padding: 8px 12px; border: 2px solid var(--text-dark); font-family: var(--font-mono); font-size: 1.1rem;
+            box-shadow: 3px 3px 0 var(--text-dark); display: flex; flex-direction: column; align-items: center;
+            background: var(--white); animation: popIn 0.2s ease forwards; opacity: 0; font-weight: bold;
+        }
+        .token small { font-size: 0.75rem; color: var(--accent-purple); font-family: var(--font-sans); font-weight: bold; margin-bottom: 4px; }
+        @keyframes popIn { to { opacity: 1; transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+  
+
+    <div class="page-container">
+          <a href="index.html" class="back-link">← Back to Home</a>
+        <h1>Lexical Analysis (The Lexer)</h1>
+        <div class="subtitle">Turning Raw Characters into Meaningful Tokens</div>
+
+        <h2>What is Lexical Analysis?</h2>
+        <p>When the compiler first looks at a source code file, it just sees a giant string of meaningless characters: <code>i, n, t,  , x,  , =,  , 1, 0, ;</code>. The Lexer's job is to read this string character by character, discard useless information (like spaces and comments), and group the characters into logical words called <strong>Tokens</strong>.</p>
+        
+        <div class="retro-box">
+            <h3>Token Categories in VizLang (Based on lexer.l)</h3>
+            <ul>
+                <li><strong>TYPES & KEYWORDS:</strong> Reserved words that control the language (<code>TYPE_INT</code>, <code>TYPE_VOID</code>, <code>IF</code>, <code>RETURN</code>).</li>
+                <li><strong>IDENTIFIER:</strong> Names chosen by the programmer for variables or functions (<code>total</code>, <code>binarySearch</code>).</li>
+                <li><strong>NUMBER & STRING_LITERAL:</strong> Values and text strings (<code>42</code>, <code>"Hello"</code>).</li>
+                <li><strong>OPERATORS:</strong> Mathematical and logical symbols (<code>PLUS</code>, <code>EQ</code>, <code>LAND</code>, <code>GT</code>).</li>
+                <li><strong>PUNCTUATION:</strong> Structural characters (<code>=</code>, <code>;</code>, <code>{</code>, <code>}</code>, <code>(</code>, <code>)</code>).</li>
+            </ul>
+        </div>
+
+        <h2>Why is this necessary?</h2>
+        <p>By converting the code into a stream of tokens, we make the next phase (the Parser) infinitely easier to write. The Parser no longer has to worry about whether a user put one space or ten spaces between <code>int</code> and <code>x</code>; it simply looks at the clean, organized list of tokens.</p>
+
+        <h2>Interactive Lexer Visualizer</h2>
+        <p>Type any VizLang code into the box below and click the button to watch the Lexer "chop" it into categorized tokens, exactly how your C code does it! Notice how it completely ignores comments.</p>
+
+        <div class="dashed-box">
+            <h3>Input Source Code</h3>
+            <textarea id="lexer-input" style="width: 100%; height: 160px; font-family: var(--font-mono); font-size: 1.1rem; padding: 10px; border: 2px solid var(--text-dark); border-radius: 4px;">/* This is a comment */
+int binarySearch(int arr[], int key) {
+    // Check if valid
+    if (key == 12) {
+        print("Found it!");
+        return 1;
+    }
+    return 0;
+}</textarea>
+            <br><br>
+            <button class="action-btn" style="text-align: center; width: 100%;" onclick="runLexer()">Run Lexer (Chop Text) ➔</button>
+        </div>
+
+        <div class="retro-box" id="token-box" style="display: none; background-color: var(--bg-color); margin-top: 20px;">
+            <h3>Generated Token Stream</h3>
+            <div class="token-container" id="token-container"></div>
+        </div>
+    </div>
+
+    <script>
+        function runLexer() {
+            const rawCode = document.getElementById('lexer-input').value;
+            const container = document.getElementById('token-container');
+            document.getElementById('token-box').style.display = 'block';
+            container.innerHTML = ''; // Clear old tokens
+
+            // 1. Remove comments exactly like Flex does
+            // Strips out /* ... */ and // ...
+            let code = rawCode.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, ' ');
+
+            // 2. Comprehensive Regex matching the Flex rules
+            // Matches strings, double-char ops, single-char ops, words, numbers, and punctuation
+            const tokenRegex = /"[^"\n]*"|==|!=|<=|>=|&&|\|\||[a-zA-Z_][a-zA-Z0-9_]*|\d+|[=;,\(\)\{\}\[\]><+\-*/&]/g;
+            const tokens = code.match(tokenRegex) || [];
+
+            // 3. Exact mappings from lexer.l
+            const keywords = {
+                'int': 'TYPE_INT', 'void': 'TYPE_VOID', 'if': 'IF', 'else': 'ELSE',
+                'input': 'INPUT', 'while': 'WHILE', 'return': 'RETURN', 'repeat': 'REPEAT',
+                'sort': 'SORT', 'print': 'PRINT', 'printarray': 'PRINT_ARRAY', 'for': 'FOR'
+            };
+
+            const operators = {
+                '==': 'EQ', '!=': 'NEQ', '<=': 'LEQ', '>=': 'GEQ', '&&': 'LAND', '||': 'LOR',
+                '&': 'AMP', '>': 'GT', '<': 'LT', '+': 'PLUS', '-': 'MINUS', '*': 'MUL', '/': 'DIV'
+            };
+
+            // 4. Classify and Render
+            tokens.forEach((t, i) => {
+                let type = "UNKNOWN";
+
+                if (keywords[t]) type = keywords[t];
+                else if (operators[t]) type = operators[t];
+                else if (/^\d+$/.test(t)) type = "NUMBER";
+                else if (/^"[^"\n]*"$/.test(t)) type = "STRING_LITERAL";
+                else if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(t)) type = "IDENTIFIER";
+                else if (/^[=;,\(\)\{\}\[\]]$/.test(t)) type = "PUNCTUATION";
+
+                const div = document.createElement('div');
+                div.className = 'token';
+                div.style.animationDelay = `${i * 0.03}s`; // staggered pop-in effect
+                
+                // HTML escape to safely render <, >, and & characters
+                const safeT = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                
+                div.innerHTML = `<small>${type}</small> <span>${safeT}</span>`;
+                container.appendChild(div);
+            });
+        }
+    </script>
+</body>
+</html>

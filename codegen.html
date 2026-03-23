@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Code Generation - Viz-Compiler</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .reg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .reg { background: var(--white); border: 2px dashed var(--text-dark); padding: 8px 10px; display: flex; justify-content: space-between; font-size: 0.95rem; font-family: var(--font-mono); border-radius: 4px; }
+        .reg.changed { background: var(--hl-yellow); border-style: solid; box-shadow: 2px 2px 0px var(--text-dark); font-weight: bold; }
+
+        .stack-wrapper { position: relative; padding-left: 70px; margin-top: 10px;}
+        .stack-slot { border: 2px solid var(--text-dark); background: var(--white); padding: 8px 10px; display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.9rem; font-family: var(--font-mono); border-radius: 4px; height: 38px; align-items: center; }
+        .stack-slot.empty { background: transparent; border-style: dashed; color: #777;}
+        .stack-slot.active { background: var(--hl-cyan); font-weight: bold; box-shadow: 2px 2px 0 var(--text-dark); }
+        .stack-slot.padding { background: #c8e6c9; border-style: dashed; }
+        .stack-addr { color: #555; }
+        .stack-slot.active .stack-addr { color: var(--text-dark); }
+
+        .ptr { position: absolute; left: 0; font-weight: bold; font-size: 1rem; transition: top 0.2s ease; font-family: var(--font-mono); display: flex; align-items: center; height: 38px; }
+        .ptr-rbp { color: var(--accent-purple); }
+        .ptr-rsp { color: #006666; }
+    </style>
+</head>
+<body>
+
+    <div class="page-container">
+         <a href="index.html" class="back-link">← Back to Home</a>
+        
+        
+        <h1>Code Generation</h1>
+        <div class="subtitle">Managing the RAM Stack & Hardware Translation</div>
+
+   
+
+        <h2>The "Memory-to-Memory" Stack Model</h2>
+        <p>Our compiler implements a <strong>Stack-Based Model</strong> targeting the x86-64 System V ABI. It is the exact same strategy GCC uses with Zero Optimization (<span class="hl-yellow">gcc -O0</span>).</p>
+
+        <h3>1. The "Fixed-Size" Stack Frame</h3>
+        <p>Whenever a function is called, your code generator executes a standard prologue:</p>
+        <pre>
+pushq %rbp           # Save caller's base pointer
+movq %rsp, %rbp      # Set current base pointer
+subq $1024, %rsp     # Allocate 1KB of memory</pre>
+        <p>Instead of calculating exact byte sizes, we pre-allocate a massive, flat block of memory. This guarantees we never accidentally overwrite another function's memory.</p>
+
+        <h3>2. Variables & The Delivery Trucks</h3>
+        <p>Every variable gets an 8-byte slot as an offset from the Base Pointer (<code>%rbp</code>). Because the CPU cannot add two RAM addresses directly, registers (<code>%rax</code>, <code>%rbx</code>) are used strictly as <strong>temporary delivery trucks</strong>. They fetch variables from RAM, do the math, drop the result back in RAM, and immediately forget it.</p>
+
+        <h3>3. Pointers & Memory Addresses</h3>
+        <div class="retro-box">
+            <ul>
+                <li><strong>Standard Variable:</strong> <code>movq</code> grabs the <em>value</em>.</li>
+                <li><strong>Address Of (&x):</strong> <code>leaq</code> grabs the <span class="hl-cyan">Memory Address</span>.</li>
+                <li><strong>Dereference (*p):</strong> Grabs the address into a truck, then drives to that coordinate to grab the actual value.</li>
+            </ul>
+        </div>
+
+        <h2>The 16-Byte Stack Alignment Rule</h2>
+        <p>This is a notoriously confusing part of compiler engineering! It trips up almost everyone writing an x86-64 compiler for the first time.</p>
+        
+        <h3>The Hardware Reason</h3>
+        <p>Modern CPUs have ultra-fast hardware called SSE/AVX. Functions in the C Standard Library (like <span class="hl-cyan">printf</span> or <span class="hl-cyan">malloc</span>) use these hardware instructions under the hood. The specific assembly instruction they use (<code>movaps</code>) <strong>demands</strong> that the memory address it accesses is a perfect multiple of 16. If it isn't, the CPU hardware literally panics and throws a <strong>Segmentation Fault</strong>.</p>
+
+        <h3>How your stack gets misaligned</h3>
+        <p>Every time you <code>pushq</code>, you move the stack pointer (<code>%rsp</code>) by exactly 8 bytes. If your stack is perfectly aligned at <code>1024</code>, a single push moves it to <code>1016</code> (<span class="hl-yellow">Misaligned! 1016 / 16 = 63.5</span>). If you call <code>printf</code> right now, it will crash.</p>
+
+        <h3>The Failsafe: andq $-16, %rsp</h3>
+        <p>Instead of guessing if the stack is aligned, we use a brute-force bitwise mask. <code>$-16</code> is a giant wall of binary 1s ending in four 0s. Doing a Bitwise AND acts like a cookie-cutter: it keeps the address the same but forces it to round down to the nearest multiple of 16.</p>
+        <p>To prevent losing our original stack location, we wrap every C-call in this 4-step dance:</p>
+        <div class="dashed-box">
+            <pre>
+movq %rsp, %r15     # 1. Photograph exact %rsp
+andq $-16, %rsp     # 2. Round %rsp down to 16
+call viz_print      # 3. Call C function (Safe!)
+movq %r15, %rsp     # 4. Restore original stack</pre>
+        </div>
+
+        <h2>Interactive Assembly Simulator</h2>
+        <p>Click on any instruction below to jump to that state, or use the buttons to step through execution. Watch how the Failsafe adds "Padding" to the stack!</p>
+
+        <div class="retro-box sim-container">
+            <div class="sim-left">
+                <div id="sim-code-panel"></div>
+                <div class="controls">
+                    <button class="action-btn" id="btn-sim-prev" onclick="setStep(currentStep - 1)">← Back</button>
+                    <button class="action-btn" id="btn-sim-next" onclick="setStep(currentStep + 1)">Next →</button>
+                    <button class="action-btn" onclick="setStep(0)" style="background:#e5e7eb;">Reset</button>
+                </div>
+            </div>
+
+            <div class="sim-right">
+                <div class="reg-grid">
+                    <div class="reg" id="reg-rax">%rax: <span id="val-rax">0</span></div>
+                    <div class="reg" id="reg-r15">%r15: <span id="val-r15">0</span></div>
+                    <div class="reg" id="reg-rbp">%rbp: <span id="val-rbp">0x1000</span></div>
+                    <div class="reg" id="reg-rsp">%rsp: <span id="val-rsp">0x1000</span></div>
+                </div>
+
+                <div class="stack-wrapper">
+                    <div class="ptr ptr-rbp" id="ptr-rbp">▶ rbp</div>
+                    <div class="ptr ptr-rsp" id="ptr-rsp">▶ rsp</div>
+                    <div id="sim-stack-panel"></div>
+                </div>
+            </div>
+        </div>
+             <h2>Why Avoid Register Allocation?</h2>
+        <div class="dashed-box">
+            <p>The most highly-optimized compilers (like GCC with <span class="hl-yellow">-O3</span>) use complex algorithms like <em>Graph Coloring</em> to keep variables inside CPU registers.</p>
+            <p>However, we explicitly chose <span class="hl-cyan">not</span> to do this. Here is why:</p>
+            <ul>
+                <li><strong>Register Starvation:</strong> x86-64 only has ~14 general-purpose registers. If a function has 20 variables, the compiler must write complex code to "spill" variables back to RAM.</li>
+                <li><strong>Algorithmic Complexity:</strong> It requires tracking "Live Ranges" to know exactly when a register can be safely overwritten.</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const START_ADDR = 0x1000;
+        
+        const INSTRUCTIONS = [
+            { code: "pushq %rbp", comment: "Save caller's frame", action: (s) => { s.rsp -= 8; s.mem[s.rsp] = { label: "Saved %rbp" }; } },
+            { code: "movq %rsp, %rbp", comment: "Set Base Pointer", action: (s) => { s.rbp = s.rsp; } },
+            { code: "subq $32, %rsp", comment: "Allocate Memory", action: (s) => { s.rsp -= 32; } },
+            { code: "movq $10, -8(%rbp)", comment: "x = 10", action: (s) => { s.mem[s.rbp - 8] = { label: "var x: 10" }; s.highlight = s.rbp - 8;} },
+            { code: "movq -8(%rbp), %rax", comment: "Load x to %rax", action: (s) => { s.rax = 10; s.changedReg = 'rax'; } },
+            { code: "movq %rsp, %r15", comment: "Backup %rsp", action: (s) => { s.r15 = s.rsp; s.changedReg = 'r15'; } },
+            { code: "andq $-16, %rsp", comment: "Force 16-Byte Align", action: (s) => { 
+                const rem = s.rsp % 16; 
+                if (rem !== 0) { 
+                    s.rsp -= rem; 
+                    s.mem[s.rsp] = { label: "16-Byte Spacer", isPadding: true }; 
+                    s.highlight = s.rsp;
+                } 
+            }},
+            { code: "call viz_print", comment: "Safe C-Library Call", action: (s) => {} },
+            { code: "movq %r15, %rsp", comment: "Restore %rsp", action: (s) => { s.rsp = s.r15; s.changedReg = 'rsp'; } },
+            { code: "leave", comment: "Restore frame", action: (s) => { s.rsp = s.rbp + 8; s.rbp = START_ADDR; } },
+            { code: "ret", comment: "Return", action: (s) => {} }
+        ];
+
+        let currentStep = 0;
+        let currentState = {};
+
+        function toHex(num) { return `0x${num.toString(16).toUpperCase()}`; }
+
+        function calculateState(step) {
+            let s = { rax: 0, r15: 0, rbp: START_ADDR, rsp: START_ADDR, mem: {}, changedReg: null, highlight: null };
+            for (let i = 0; i < step; i++) {
+                s.changedReg = null; s.highlight = null; 
+                INSTRUCTIONS[i].action(s);
+            }
+            return s;
+        }
+
+        function setStep(newStep) {
+            currentStep = Math.max(0, Math.min(INSTRUCTIONS.length, newStep));
+            currentState = calculateState(currentStep);
+            renderUI();
+        }
+
+        function renderUI() {
+            const codePanel = document.getElementById('sim-code-panel');
+            codePanel.innerHTML = '';
+            
+            INSTRUCTIONS.forEach((inst, idx) => {
+                const div = document.createElement('div');
+                div.className = `code-row ${idx < currentStep ? 'executed' : ''} ${idx === currentStep - 1 ? 'active' : ''}`;
+                div.onclick = () => setStep(idx + 1);
+                div.innerHTML = `<span>${inst.code}</span> <span class="comment">; ${inst.comment}</span>`;
+                codePanel.appendChild(div);
+            });
+
+            document.getElementById('btn-sim-prev').disabled = currentStep === 0;
+            document.getElementById('btn-sim-next').disabled = currentStep === INSTRUCTIONS.length;
+
+            document.getElementById('val-rax').innerText = currentState.rax;
+            document.getElementById('val-r15').innerText = currentState.r15 ? toHex(currentState.r15) : '0';
+            document.getElementById('val-rbp').innerText = toHex(currentState.rbp);
+            document.getElementById('val-rsp').innerText = toHex(currentState.rsp);
+
+            ['rax', 'r15', 'rsp'].forEach(reg => {
+                const el = document.getElementById(`reg-${reg}`);
+                if (currentState.changedReg === reg) el.classList.add('changed');
+                else el.classList.remove('changed');
+            });
+
+            const stackPanel = document.getElementById('sim-stack-panel');
+            stackPanel.innerHTML = '';
+
+            let rbpTop = -100, rspTop = -100, slotIndex = 0;
+            const SLOT_HEIGHT = 42; 
+
+            for (let addr = START_ADDR; addr >= START_ADDR - 64; addr -= 8) {
+                const mem = currentState.mem[addr];
+                const isEmpty = !mem && addr <= currentState.rsp;
+                const isHighlight = addr === currentState.highlight;
+                
+                const div = document.createElement('div');
+                div.className = `stack-slot ${isEmpty ? 'empty' : ''} ${isHighlight ? 'active' : ''} ${mem?.isPadding ? 'padding' : ''}`;
+                let label = mem ? mem.label : (isEmpty ? '-' : 'Unallocated');
+                div.innerHTML = `<span class="stack-addr">${toHex(addr)}</span> <span>${label}</span>`;
+                stackPanel.appendChild(div);
+
+                if (addr === currentState.rbp) rbpTop = slotIndex * SLOT_HEIGHT; 
+                if (addr === currentState.rsp) rspTop = slotIndex * SLOT_HEIGHT;
+                slotIndex++;
+            }
+
+            document.getElementById('ptr-rbp').style.top = `${rbpTop}px`;
+            document.getElementById('ptr-rsp').style.top = `${rspTop}px`;
+        }
+
+        setStep(0);
+    </script>
+    
+</body>
+</html>
