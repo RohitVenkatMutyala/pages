@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VizLang Reference - Viz-Compiler</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Navbar Styles */
+        .navbar {
+            background-color: var(--white); border-bottom: 4px solid var(--text-dark);
+            padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 0px rgba(0,0,0,0.1); flex-wrap: wrap; gap: 10px;
+        }
+        .nav-brand { font-size: 1.5rem; font-weight: 800; color: var(--accent-purple); }
+        .nav-links { display: flex; gap: 10px; overflow-x: auto; align-items: center; padding-bottom: 5px;}
+        .nav-btn {
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 15px; 
+            font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0 var(--text-dark); 
+            transition: all 0.1s; font-family: var(--font-sans); font-size: 1rem; 
+            border-radius: 4px; text-decoration: none; color: var(--text-dark); white-space: nowrap;
+        }
+        .nav-btn:hover { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .nav-btn.active { background: var(--hl-cyan); box-shadow: 0 0 0 transparent; transform: translate(2px, 2px); }
+
+        /* Reference Styles */
+        .toc-box { background: var(--bg-color); border: 2px solid var(--text-dark); padding: 15px; border-radius: 4px; margin-bottom: 30px; font-weight: bold; }
+        .toc-box ul { list-style-type: none; padding-left: 10px; }
+        .toc-box li { margin-bottom: 8px; }
+        .toc-box a { color: var(--accent-purple); text-decoration: none; }
+        .toc-box a:hover { text-decoration: underline; }
+
+        .ref-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; margin-bottom: 20px;}
+        @media (max-width: 800px) { .ref-grid { grid-template-columns: 1fr; } }
+
+        table.ref-table { width: 100%; border-collapse: collapse; margin: 15px 0; background: var(--white); border: 2px solid var(--text-dark); font-family: var(--font-mono); font-size: 0.95rem;}
+        .ref-table th, .ref-table td { border: 1px solid var(--text-dark); padding: 8px 12px; text-align: left; }
+        .ref-table th { background: var(--text-dark); color: var(--white); font-family: var(--font-sans); }
+
+        .code-box { background-color: var(--white); border: 2px solid var(--text-dark); border-radius: 4px; padding: 15px; font-family: var(--font-mono); font-size: 1.05rem; line-height: 1.5; box-shadow: 4px 4px 0 var(--text-dark); overflow-x: auto; margin-bottom: 20px; margin-top: 10px;}
+
+        /* Syntax Highlighting Colors */
+        .hl-kw { color: #d946ef; font-weight: bold; } /* Keywords: Pink */
+        .hl-type { color: #0ea5e9; font-weight: bold; } /* Types: Blue */
+        .hl-num { color: #f59e0b; font-weight: bold; } /* Numbers: Orange */
+        .hl-str { color: #10b981; } /* Strings: Green */
+        .hl-fn { color: #6366f1; font-weight: bold; } /* Functions: Indigo */
+        .hl-op { color: #ef4444; font-weight: bold; } /* Operators: Red */
+        .hl-com { color: #94a3b8; font-style: italic; } /* Comments: Gray */
+    </style>
+</head>
+<body>
+
+
+
+    <div class="page-container">
+        <a href="index.html" class="back-link">← Back to Home</a>
+        
+        <h1>Viz-Compiler — Language Reference & Developer Manual</h1>
+        <div class="subtitle">Official Documentation for VizLang and the Compiler Pipeline</div>
+
+        <p><strong>Viz-Compiler</strong> is a custom-built native compiler for <strong>VizLang</strong>, a minimal C-like language designed as a complete, pedagogically clear compiler construction reference. It compiles VizLang source through every classical stage — Lexing → Parsing → Semantic Analysis → IR Generation → Optimization → x86-64 Native Code — exposing each phase's internal representation via interactive web visualizers.</p>
+
+        <div class="retro-box" style="background-color: #fef3c7; border-color: #d97706;">
+            <strong style="color: #92400e;">Academic Disclaimer:</strong> Viz-Compiler is built to demonstrate compiler theory. Design decisions consistently choose <em>readability and observability</em> over performance. The backend utilizes a strict "Memory-to-Memory" stack model rather than complex register allocation.
+        </div>
+
+        <div class="toc-box">
+            <h3>Table of Contents</h3>
+            <ul>
+                <li><a href="#goals">1. Project Goals & Architecture</a></li>
+                <li><a href="#spec">2. VizLang Specification</a></li>
+                <li><a href="#functions">3. Functions & Recursion</a></li>
+                <li><a href="#hooks">4. Built-in Hooks & Loops</a></li>
+                <li><a href="#ir">5. IR Instruction Set Reference</a></li>
+                <li><a href="#opt">6. Optimization Reference</a></li>
+                <li><a href="#example">7. Complete Code Example</a></li>
+            </ul>
+        </div>
+
+        <hr style="border: 2px dashed var(--text-dark); margin: 40px 0;">
+
+        <h2 id="goals">1. Project Goals & Architecture</h2>
+        <div class="dashed-box">
+            <h3>Goals</h3>
+            <ul>
+                <li><strong>Full Pipeline Visibility:</strong> Every compilation phase produces inspectable output (tokens, AST, symbol tables, quads, assembly), which is visible on localhost at port number 5000.</li>
+                <li><strong>Memory-to-Memory CodeGen:</strong> Instead of relying on volatile CPU registers, variables are strictly mapped to stack offsets (e.g., <code>-8(%rbp)</code>). This ensures state is always verifiable.</li>
+                <li><strong>Hardware Acceleration Hooks:</strong> VizLang includes special built-ins like <code>sort()</code> that map directly to pre-compiled assembly routines for algorithmic education.</li>
+            </ul>
+            
+            <h3>Compiler Pipeline</h3>
+            <pre style="font-family: var(--font-mono); font-weight: bold; color: var(--accent-purple);">
+Source (.viz) → Lexer (Flex) → Parser (Bison) → Semantic (AST Walk) 
+  → IR Gen (Quads) → Optimizer (Prop/Fold/Strength/DCE) → x86-64 ASM</pre>
+        </div>
+
+        <h2 id="spec">2. VizLang Specification</h2>
+        <p>VizLang is a strict subset of C. Every valid VizLang program is structurally close to C, but relies on integers, strict scoping, and explicit memory pointers.</p>
+
+        <div class="ref-grid">
+            <div class="retro-box" style="margin: 0;">
+                <h3>2.1 Data Types & Variables</h3>
+                <p>VizLang operates exclusively on <strong>64-bit (8-byte) integers</strong>. To perfectly align with the x86-64 hardware stack, every variable, pointer, and array element occupies exactly 8 bytes of memory. Variables must be explicitly declared.</p>
+                <pre class="code-box viz-code">
+// 64-bit Integer (8 bytes)
+int score = 100;
+int x; 
+x = 50;
+                </pre>
+            </div>
+
+            <div class="retro-box" style="margin: 0;">
+                <h3>2.2 Pointers & Memory</h3>
+                <p>VizLang supports explicit memory addressing using the address-of (<code>&</code>) and dereference (<code>*</code>) operators. Pointers also consume exactly 8 bytes.</p>
+                <pre class="code-box viz-code">
+int target = 42;
+int *ptr = &target; // Get 8-byte memory address
+*ptr = 99;          // Mutate target via pointer
+                </pre>
+            </div>
+        </div>
+
+        <div class="retro-box">
+            <h3>2.3 Arrays</h3>
+            <p>Arrays are allocated as contiguous blocks on the stack frame. The size must be an integer literal. There is no runtime bounds checking.</p>
+            <pre class="code-box viz-code">
+int arr[5];                  // Uninitialized fixed-size array
+int primes[3] = {2, 3, 5};   // Array with initializer list
+arr[0] = primes[2];          // Indexing (Read & Write)
+            </pre>
+        </div>
+
+        <h3>2.4 Operators</h3>
+        <table class="ref-table">
+            <thead>
+                <tr><th>Category</th><th>Operators</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>Arithmetic</strong></td><td><code>+</code> <code>-</code> <code>*</code> <code>/</code></td><td>Standard integer math. Evaluated left-to-right.</td></tr>
+                <tr><td><strong>Relational</strong></td><td><code>==</code> <code>!=</code> <code>&lt;</code> <code>&gt;</code> <code>&lt;=</code> <code>&gt;=</code></td><td>Evaluates to 1 (true) or 0 (false).</td></tr>
+                <tr><td><strong>Logical</strong></td><td><code>&&</code> <code>||</code></td><td>C-style short-circuit evaluation supported by IR generator.</td></tr>
+                <tr><td><strong>Memory</strong></td><td><code>&</code> <code>*</code></td><td>Address-of and Dereference operators.</td></tr>
+            </tbody>
+        </table>
+
+        <h2 id="functions">3. Functions & Recursion</h2>
+        <p>VizLang supports complex procedural generation through functions. Functions must declare their return type (<code>int</code> or <code>void</code>). The semantic analyzer guarantees that all code paths in an <code>int</code> function reach a <code>return</code> statement.</p>
+
+        <div class="ref-grid">
+            <div class="dashed-box" style="margin:0;">
+                <h3>3.1 Pass-by-Value (Standard)</h3>
+                <p>Standard arguments (like integers) are passed <strong>by value</strong>. The function receives a copy of the data. Modifying the argument inside the function does <em>not</em> affect the original variable.</p>
+                <pre class="code-box viz-code">
+// Recursive Factorial Function
+int factorial(int n) {
+    if (n <= 1) { return 1; }
+    // 'n' is a local copy for this frame
+    return n * factorial(n - 1); 
+}
+                </pre>
+            </div>
+
+            <div class="retro-box" style="margin:0;">
+                <h3>3.2 Pass-by-Reference (Array Decay)</h3>
+                <p>When an array is passed as an argument, the semantic analyzer forces <strong>Array Decay</strong>. Instead of copying the entire array, it is passed <strong>by reference</strong> as an 8-byte memory pointer.</p>
+                <pre class="code-box viz-code">
+// Notice the empty brackets: arr[]
+// This tells the compiler it is a pointer
+void mutateArray(int arr[], int index) {
+    arr[index] = 999; 
+    // This modifies the caller's array!
+}
+                </pre>
+            </div>
+        </div>
+
+        <div class="dashed-box">
+            <h3>3.3 Explicit Pass-by-Reference (Pointers)</h3>
+            <p>To modify a standard variable inside a function, you must pass its memory address using the <strong>Address-of (<code>&</code>)</strong> operator. The function receives it as a <strong>Pointer (<code>*</code>)</strong> and mutates it using the Dereference operator.</p>
+            <pre class="code-box viz-code">
+// Function expects an 8-byte memory pointer
+void addBonus(int *scorePtr) {
+    *scorePtr = *scorePtr + 500; // Mutate caller's data
+}
+
+int main() {
+    int myScore = 100;
+    
+    // Pass the memory address, NOT the value
+    addBonus(&myScore); 
+    
+    print(myScore); // Outputs 600
+    return 0;
+}
+            </pre>
+        </div>
+
+        <h2 id="hooks">4. Built-in Hooks & Loops</h2>
+        <p>Because Viz-Compiler is an educational tool, it includes special grammar rules designed to teach fundamental computer science concepts.</p>
+
+        <div class="ref-grid">
+            <div class="dashed-box" style="margin:0;">
+                <h3>4.1 Control Flow</h3>
+                <pre class="code-box viz-code">
+// If-Else Branching
+if (x == 10) { 
+    print("Ten"); 
+} else { 
+    print("Other"); 
+}
+
+// Standard Loops
+while (x < 10) { x = x + 1; }
+
+for (int i = 0; i < 5; i = i + 1) { 
+    print(i); 
+}
+
+// The Repeat Loop (Evaluates limit exactly once)
+repeat (5 * 2) {
+    print("This prints 10 times!");
+}
+                </pre>
+            </div>
+            
+            <div class="dashed-box" style="margin:0;">
+                <h3>4.2 Native Action Hooks</h3>
+                <p>These commands bypass standard function calls and are injected directly as distinct IR instructions or external assembly jumps.</p>
+                <pre class="code-box viz-code">
+// I/O Operations
+print(x);        // Prints variable 
+print("Text");   // Prints string literal
+input(x);        // Reads integer from stdin
+
+// Hardware & Memory Hooks
+printarray(arr); // Dumps entire array contents
+sort(arr, 5);    // Here 5 was the Size of the array .
+                </pre>
+            </div>
+        </div>
+
+        <h2 id="ir">5. IR Instruction Set Reference</h2>
+        <p>The Intermediate Representation (IR) flattens the AST into 3-Address Code (Quads) generated by <code>ir.c</code>. This acts as the bridge to Assembly.</p>
+        <table class="ref-table">
+            <thead>
+                <tr><th>Opcode</th><th>Arg1</th><th>Arg2</th><th>Result</th><th>Semantics</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>IR_MOV</code></td><td>Source</td><td>—</td><td>Dest</td><td><code>Result = Arg1</code></td></tr>
+                <tr><td><code>IR_ADD / SUB</code></td><td>Left</td><td>Right</td><td>Dest</td><td><code>Result = Arg1 +/- Arg2</code></td></tr>
+                <tr><td><code>IR_MUL / DIV</code></td><td>Left</td><td>Right</td><td>Dest</td><td><code>Result = Arg1 */÷ Arg2</code></td></tr>
+                <tr><td><code>IR_SHL / SHR</code></td><td>Value</td><td>Shift</td><td>Dest</td><td><code>Result = Arg1 &lt;&lt;/&gt;&gt; Arg2</code> (Used by Optimizer)</td></tr>
+                <tr><td><code>IR_LT / GT / EQ</code></td><td>Left</td><td>Right</td><td>Dest</td><td>Sets Result to 1 or 0 based on comparison</td></tr>
+                <tr><td><code>IR_IF_FALSE</code></td><td>Condition</td><td>—</td><td>Label</td><td>Jump to <code>Result</code> if <code>Arg1 == 0</code></td></tr>
+                <tr><td><code>IR_GOTO</code></td><td>Label</td><td>—</td><td>—</td><td>Unconditional jump to <code>Arg1</code></td></tr>
+                <tr><td><code>IR_LABEL</code></td><td>Name</td><td>—</td><td>—</td><td>Jump target marker</td></tr>
+                <tr><td><code>IR_CALL</code></td><td>Func Name</td><td>—</td><td>Dest</td><td>Executes function, stores return in <code>Result</code></td></tr>
+                <tr><td><code>IR_PARAM / ARG</code></td><td>Var/Value</td><td>Index</td><td>—</td><td>Pushes argument to stack before a CALL</td></tr>
+                <tr><td><code>IR_ARR_DECL</code></td><td>Name</td><td>Size</td><td>—</td><td>Allocates memory for array</td></tr>
+                <tr><td><code>IR_ARR_LOAD</code></td><td>Array Name</td><td>Index</td><td>Dest</td><td><code>Result = Array[Index]</code></td></tr>
+                <tr><td><code>IR_ARR_STORE</code></td><td>Array Name</td><td>Index</td><td>Value</td><td><code>Array[Index] = Result (Value)</code></td></tr>
+            </tbody>
+        </table>
+
+        <h2 id="opt">6. Optimization Reference</h2>
+        <p>The <code>optimize_ir()</code> pipeline in <code>ir.c</code> performs a multi-pass sweep over the IR Quads to improve execution speed before Code Generation.</p>
+
+        <div class="retro-box">
+            <ul>
+                <li><strong>Constant Propagation (<code>opt_propagate</code>):</strong> Tracks variables assigned to literal values. If <code>t0 = 5</code>, it replaces future uses of <code>t0</code> with the number <code>5</code>.</li>
+                <li><strong>Constant Folding (<code>opt_fold</code>):</strong> Scans for <code>IR_ADD</code>, <code>IR_SUB</code>, <code>IR_MUL</code>, and <code>IR_DIV</code> where both arguments are numbers. It executes the math during compilation and replaces the Quad with a single <code>IR_MOV</code>.</li>
+                <li><strong>Strength Reduction (<code>opt_strength</code>):</strong> Scans for <code>IR_MUL</code> or <code>IR_DIV</code> by a power of 2. It replaces them with <code>IR_SHL</code> (Shift Left) or <code>IR_SHR</code> (Shift Right), mapping to CPU bitwise operators which execute significantly faster.</li>
+                <li><strong>Dead Code Elimination (<code>opt_dead</code>):</strong> Scans forward to see if a Compiler Temporary (<code>tN</code>) is ever used as an <code>Arg1</code> or <code>Arg2</code>. If it is never used, the assignment Quad is deleted entirely.</li>
+            </ul>
+        </div>
+
+        <h2 id="example">7. Complete Code Example</h2>
+        <p>This is a complete, valid VizLang program demonstrating functions, recursion, array decay, and mathematical logic. Our compiler can translate this all the way down to executable x86-64 assembly!</p>
+
+        <div class="dashed-box">
+            <pre class="code-box viz-code" style="font-size: 1.15rem;">
+// Recursive Binary Search Implementation
+int binarySearch(int arr[], int l, int r, int key) {
+    int mid;
+    
+    // Base Case: Not found
+    if (l > r) { 
+        return 0 - 1; 
+    }
+    
+    // Find middle (Optimized to bit-shift by IR)
+    mid = (l + r) / 2;
+    
+    // Check if key is present at mid
+    if (arr[mid] == key) { 
+        return mid; 
+    } else {
+        // Recurse left or right
+        if (key < arr[mid]) { 
+            return binarySearch(arr, l, mid - 1, key); 
+        } else { 
+            return binarySearch(arr, mid + 1, r, key); 
+        }
+    }
+}
+
+int main() {
+    int data[5] = {10, 20, 30, 40, 50};
+    int target = 30;
+    int result;
+
+    print("Searching for target...");
+    
+    // Call the function
+    result = binarySearch(data, 0, 4, target);
+    
+    if (result != 0 - 1) {
+        print("Found at index:");
+        print(result);
+    } else {
+        print("Not Found");
+    }
+    
+    return 0;
+}
+            </pre>
+        </div>
+
+    </div>
+
+    <script>
+        // Safely escape HTML characters
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // Custom Live Syntax Highlighter for VizLang (Single-Pass)
+        function highlightCode() {
+            const codeBlocks = document.querySelectorAll('.viz-code');
+            
+            // A single, massive regex that matches tokens in order of priority.
+            // p1: Comments, p2: Strings, p3: Types, p4: Keywords, p5: Functions, p6: Numbers, p7: Operators
+            const tokenRegex = /(\/\/.*)|("[^"\n]*")|\b(int|void)\b|\b(if|else|while|for|repeat|return)\b|\b(print|input|printarray|sort)\b|\b(\d+)\b|([+\-*/=<>!&|]+)|(\s+)|([a-zA-Z_][a-zA-Z0-9_]*)|(.)/g;
+
+            codeBlocks.forEach(block => {
+                let text = block.textContent; 
+                
+                let highlighted = text.replace(tokenRegex, (match, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10) => {
+                    if (p1) return `<span class="hl-com">${escapeHtml(p1)}</span>`;
+                    if (p2) return `<span class="hl-str">${escapeHtml(p2)}</span>`;
+                    if (p3) return `<span class="hl-type">${escapeHtml(p3)}</span>`;
+                    if (p4) return `<span class="hl-kw">${escapeHtml(p4)}</span>`;
+                    if (p5) return `<span class="hl-fn">${escapeHtml(p5)}</span>`;
+                    if (p6) return `<span class="hl-num">${escapeHtml(p6)}</span>`;
+                    if (p7) return `<span class="hl-op">${escapeHtml(p7)}</span>`;
+                    if (p8) return match; // Whitespace
+                    if (p9) return escapeHtml(p9); // Standard Identifiers
+                    if (p10) return escapeHtml(p10); // Punctuation like ;, {, }
+                    return match;
+                });
+
+                block.innerHTML = highlighted;
+            });
+        }
+
+        window.onload = highlightCode;
+    </script>
+</body>
+</html>
