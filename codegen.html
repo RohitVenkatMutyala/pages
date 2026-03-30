@@ -5,214 +5,466 @@
     <title>Code Generation - Viz-Compiler</title>
     <link rel="stylesheet" href="style.css">
     <style>
+        /* Navbar Styles */
+        .navbar {
+            background-color: var(--white); border-bottom: 4px solid var(--text-dark);
+            padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 0px rgba(0,0,0,0.1); flex-wrap: wrap; gap: 10px;
+        }
+        .nav-brand { font-size: 1.5rem; font-weight: 800; color: var(--accent-purple); }
+        .nav-links { display: flex; gap: 10px; overflow-x: auto; align-items: center; padding-bottom: 5px;}
+        .nav-btn {
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 15px; 
+            font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0 var(--text-dark); 
+            transition: all 0.1s; font-family: var(--font-sans); font-size: 1rem; 
+            border-radius: 4px; text-decoration: none; color: var(--text-dark); white-space: nowrap;
+        }
+        .nav-btn:hover { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .nav-btn.active { background: var(--hl-cyan); box-shadow: 0 0 0 transparent; transform: translate(2px, 2px); }
+
+        /* Simulator Layout */
         .reg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .reg { background: var(--white); border: 2px dashed var(--text-dark); padding: 8px 10px; display: flex; justify-content: space-between; font-size: 0.95rem; font-family: var(--font-mono); border-radius: 4px; }
         .reg.changed { background: var(--hl-yellow); border-style: solid; box-shadow: 2px 2px 0px var(--text-dark); font-weight: bold; }
 
         .stack-wrapper { position: relative; padding-left: 70px; margin-top: 10px;}
-        .stack-slot { border: 2px solid var(--text-dark); background: var(--white); padding: 8px 10px; display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.9rem; font-family: var(--font-mono); border-radius: 4px; height: 38px; align-items: center; }
+        .stack-slot { border: 2px solid var(--text-dark); background: var(--white); padding: 8px 10px; display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.9rem; font-family: var(--font-mono); border-radius: 4px; height: 38px; align-items: center; transition: all 0.2s;}
         .stack-slot.empty { background: transparent; border-style: dashed; color: #777;}
-        .stack-slot.active { background: var(--hl-cyan); font-weight: bold; box-shadow: 2px 2px 0 var(--text-dark); }
+        .stack-slot.active { background: var(--hl-cyan); font-weight: bold; box-shadow: 2px 2px 0 var(--text-dark); transform: translate(-2px, -2px);}
         .stack-slot.padding { background: #c8e6c9; border-style: dashed; }
-        .stack-addr { color: #555; }
-        .stack-slot.active .stack-addr { color: var(--text-dark); }
+        .stack-slot.frame-boundary { border-top: 4px solid var(--accent-purple); }
+        .stack-addr { color: #555; font-size: 0.8rem; }
+        .stack-slot.active .stack-addr { color: var(--text-dark); font-weight: bold; }
 
         .ptr { position: absolute; left: 0; font-weight: bold; font-size: 1rem; transition: top 0.2s ease; font-family: var(--font-mono); display: flex; align-items: center; height: 38px; }
         .ptr-rbp { color: var(--accent-purple); }
         .ptr-rsp { color: #006666; }
+
+        .code-row { display: flex; flex-direction: column; align-items: flex-start; padding: 8px 12px; margin-bottom: 6px; font-size: 0.95rem; cursor: pointer; border-radius: 4px; border: 1px solid transparent; font-family: var(--font-mono); font-weight: bold;}
+        .code-row:hover { background: #f8fafc; border-color: #cbd5e1; }
+        .code-row.active { background-color: var(--hl-cyan); border-color: var(--text-dark); box-shadow: 3px 3px 0 var(--text-dark); transform: translate(-2px, -2px); }
+        .code-row.executed { opacity: 0.6; }
+        .code-row .comment { align-self: flex-end; color: var(--accent-purple); font-size: 0.85rem; font-style: italic; font-family: var(--font-sans); font-weight: normal; margin-top: 4px;}
+        
+        /* New Sub-Step styling for the LEAVE breakdown */
+        .code-row.sub-step { margin-left: 20px; width: calc(100% - 20px); border-left: 4px solid #94a3b8; background-color: #f1f5f9; }
+        .code-row.sub-step.active { border-left-color: var(--text-dark); background-color: var(--hl-cyan); }
+
+        /* Specific styles for labels and jumps in code-rows */
+        .code-row.label { color: #94a3b8; font-weight: normal; background: transparent; border: none; box-shadow: none; cursor: default; padding-top: 2px; padding-bottom: 2px;}
+        .code-row.label:hover { background: transparent; border-color: transparent;}
+        .code-row.jump span:first-child { color: #ef4444; font-style: italic; }
     </style>
 </head>
 <body>
 
+    
     <div class="page-container">
-         <a href="index.html" class="back-link">← Back to Home</a>
-        
+        <a href="index.html" class="back-link">← Back to Home</a>
         
         <h1>Code Generation</h1>
         <div class="subtitle">Managing the RAM Stack & Hardware Translation</div>
 
-   
-
         <h2>The "Memory-to-Memory" Stack Model</h2>
-        <p>Our compiler implements a <strong>Stack-Based Model</strong> targeting the x86-64 System V ABI. It is the exact same strategy GCC uses with Zero Optimization (<span class="hl-yellow">gcc -O0</span>).</p>
+        <p>Our compiler implements a <strong>Stack-Based Model</strong> targeting the x86-64 System V ABI. It is the exact same strategy GCC uses with Zero Optimization (<span class="hl-yellow" style="font-weight:bold; padding:2px 4px; border-radius:2px;">gcc -O0</span>).</p>
 
         <h3>1. The "Fixed-Size" Stack Frame</h3>
         <p>Whenever a function is called, your code generator executes a standard prologue:</p>
-        <pre>
+        <pre class="retro-box" style="margin-top:0; font-family:var(--font-mono); font-weight:bold;">
 pushq %rbp           # Save caller's base pointer
 movq %rsp, %rbp      # Set current base pointer
-subq $1024, %rsp     # Allocate 1KB of memory</pre>
+subq $1024, %rsp     # Allocate memory for locals</pre>
         <p>Instead of calculating exact byte sizes, we pre-allocate a massive, flat block of memory. This guarantees we never accidentally overwrite another function's memory.</p>
 
         <h3>2. Variables & The Delivery Trucks</h3>
         <p>Every variable gets an 8-byte slot as an offset from the Base Pointer (<code>%rbp</code>). Because the CPU cannot add two RAM addresses directly, registers (<code>%rax</code>, <code>%rbx</code>) are used strictly as <strong>temporary delivery trucks</strong>. They fetch variables from RAM, do the math, drop the result back in RAM, and immediately forget it.</p>
 
-        <h3>3. Pointers & Memory Addresses</h3>
-        <div class="retro-box">
-            <ul>
-                <li><strong>Standard Variable:</strong> <code>movq</code> grabs the <em>value</em>.</li>
-                <li><strong>Address Of (&x):</strong> <code>leaq</code> grabs the <span class="hl-cyan">Memory Address</span>.</li>
-                <li><strong>Dereference (*p):</strong> Grabs the address into a truck, then drives to that coordinate to grab the actual value.</li>
-            </ul>
-        </div>
+        <h2>Simulator 1: The 16-Byte Stack Alignment Failsafe</h2>
+        <p>Modern CPU hardware instructions (like <code>movaps</code> used in C-libraries like <code>printf</code>) <strong>demand</strong> that the memory address it accesses is a perfect multiple of 16. If it isn't, the CPU throws a Segmentation Fault.</p>
+        <p>To prevent crashing, we wrap every C-library call in a bitwise mask (<code>andq $-16, %rsp</code>) which acts like a cookie-cutter to force the stack to round down to 16. Watch how the Failsafe adds "Padding" to the stack!</p>
 
-        <h2>The 16-Byte Stack Alignment Rule</h2>
-        <p>This is a notoriously confusing part of compiler engineering! It trips up almost everyone writing an x86-64 compiler for the first time.</p>
-        
-        <h3>The Hardware Reason</h3>
-        <p>Modern CPUs have ultra-fast hardware called SSE/AVX. Functions in the C Standard Library (like <span class="hl-cyan">printf</span> or <span class="hl-cyan">malloc</span>) use these hardware instructions under the hood. The specific assembly instruction they use (<code>movaps</code>) <strong>demands</strong> that the memory address it accesses is a perfect multiple of 16. If it isn't, the CPU hardware literally panics and throws a <strong>Segmentation Fault</strong>.</p>
-
-        <h3>How your stack gets misaligned</h3>
-        <p>Every time you <code>pushq</code>, you move the stack pointer (<code>%rsp</code>) by exactly 8 bytes. If your stack is perfectly aligned at <code>1024</code>, a single push moves it to <code>1016</code> (<span class="hl-yellow">Misaligned! 1016 / 16 = 63.5</span>). If you call <code>printf</code> right now, it will crash.</p>
-
-        <h3>The Failsafe: andq $-16, %rsp</h3>
-        <p>Instead of guessing if the stack is aligned, we use a brute-force bitwise mask. <code>$-16</code> is a giant wall of binary 1s ending in four 0s. Doing a Bitwise AND acts like a cookie-cutter: it keeps the address the same but forces it to round down to the nearest multiple of 16.</p>
-        <p>To prevent losing our original stack location, we wrap every C-call in this 4-step dance:</p>
-        <div class="dashed-box">
-            <pre>
-movq %rsp, %r15     # 1. Photograph exact %rsp
-andq $-16, %rsp     # 2. Round %rsp down to 16
-call viz_print      # 3. Call C function (Safe!)
-movq %r15, %rsp     # 4. Restore original stack</pre>
-        </div>
-
-        <h2>Interactive Assembly Simulator</h2>
-        <p>Click on any instruction below to jump to that state, or use the buttons to step through execution. Watch how the Failsafe adds "Padding" to the stack!</p>
-
-        <div class="retro-box sim-container">
+        <div class="retro-box sim-container" style="align-items: flex-start;">
             <div class="sim-left">
-                <div id="sim-code-panel"></div>
+                <div id="sim1-code-panel"></div>
                 <div class="controls">
-                    <button class="action-btn" id="btn-sim-prev" onclick="setStep(currentStep - 1)">← Back</button>
-                    <button class="action-btn" id="btn-sim-next" onclick="setStep(currentStep + 1)">Next →</button>
-                    <button class="action-btn" onclick="setStep(0)" style="background:#e5e7eb;">Reset</button>
+                    <button class="action-btn" id="btn-sim1-prev" onclick="setSim1(sim1Step - 1)" style="width:100%">← Back</button>
+                    <button class="action-btn" id="btn-sim1-next" onclick="setSim1(sim1Step + 1)" style="width:100%">Next →</button>
+                    <button class="action-btn" onclick="setSim1(0)" style="background:#e5e7eb; color:var(--text-dark);">↺ Reset</button>
                 </div>
             </div>
-
             <div class="sim-right">
                 <div class="reg-grid">
-                    <div class="reg" id="reg-rax">%rax: <span id="val-rax">0</span></div>
-                    <div class="reg" id="reg-r15">%r15: <span id="val-r15">0</span></div>
-                    <div class="reg" id="reg-rbp">%rbp: <span id="val-rbp">0x1000</span></div>
-                    <div class="reg" id="reg-rsp">%rsp: <span id="val-rsp">0x1000</span></div>
+                    <div class="reg" id="sim1-reg-rax">%rax: <span id="sim1-val-rax">0</span></div>
+                    <div class="reg" id="sim1-reg-r15">%r15: <span id="sim1-val-r15">0</span></div>
+                    <div class="reg" id="sim1-reg-rbp">%rbp: <span id="sim1-val-rbp">0x1000</span></div>
+                    <div class="reg" id="sim1-reg-rsp">%rsp: <span id="sim1-val-rsp">0x1000</span></div>
                 </div>
-
                 <div class="stack-wrapper">
-                    <div class="ptr ptr-rbp" id="ptr-rbp">▶ rbp</div>
-                    <div class="ptr ptr-rsp" id="ptr-rsp">▶ rsp</div>
-                    <div id="sim-stack-panel"></div>
+                    <div class="ptr ptr-rbp" id="sim1-ptr-rbp">▶ rbp</div>
+                    <div class="ptr ptr-rsp" id="sim1-ptr-rsp">▶ rsp</div>
+                    <div id="sim1-stack-panel"></div>
                 </div>
             </div>
         </div>
-             <h2>Why Avoid Register Allocation?</h2>
+
+        <hr style="border: 2px dashed var(--text-dark); margin: 40px 0;">
+
+        <h2>Simulator 2: Recursion & Destroying the Sandbox</h2>
+        <p>How does a function call itself without overwriting its own variables? The answer is <strong>Activation Records (Frames)</strong>. Every time <code>call</code> is executed, the CPU jumps to the top of the function and builds a brand new, isolated sandbox on top of the old one.</p>
+        
         <div class="dashed-box">
-            <p>The most highly-optimized compilers (like GCC with <span class="hl-yellow">-O3</span>) use complex algorithms like <em>Graph Coloring</em> to keep variables inside CPU registers.</p>
-            <p>However, we explicitly chose <span class="hl-cyan">not</span> to do this. Here is why:</p>
-            <ul>
-                <li><strong>Register Starvation:</strong> x86-64 only has ~14 general-purpose registers. If a function has 20 variables, the compiler must write complex code to "spill" variables back to RAM.</li>
-                <li><strong>Algorithmic Complexity:</strong> It requires tracking "Live Ranges" to know exactly when a register can be safely overwritten.</li>
-            </ul>
+            <h3>The Function Epilogue: How `leave` Knows Where To Go</h3>
+            <p>It looks like magic when the pointers instantly jump back to the old frame, but the secret is in the <strong>Saved %rbp</strong> slot. The <code>leave</code> instruction is actually a shortcut for two hardware commands executed back-to-back:</p>
+            <ol>
+                <li><code>movq %rbp, %rsp</code> <strong>(The Collapse):</strong> Instantly moves the stack pointer up to the base pointer, abandoning all local variables in the current sandbox.</li>
+                <li><code>popq %rbp</code> <strong>(The Restore):</strong> The CPU reads the value stored at the new `%rsp` (which is the old `%rbp` address saved during the prologue), puts it into the `%rbp` register, and moves `%rsp` up 8 bytes.</li>
+            </ol>
+            <p>Finally, <code>ret</code> pops the Return Address into the instruction pointer (<code>%rip</code>) so the CPU knows what line of code to resume.</p>
         </div>
+
+        <p>Watch how executing <code>factorial(2)</code> pushes isolated memory frames, calculates the result, and safely dismantles the stack frame using the sub-instructions of <code>leave</code> to hand the output back to <code>main</code>!</p>
+
+        <div class="retro-box sim-container" style="align-items: flex-start;">
+            <div class="sim-left">
+                <div id="sim2-code-panel"></div>
+                <div class="controls">
+                    <button class="action-btn" id="btn-sim2-prev" onclick="setSim2(sim2Step - 1)" style="width:100%">← Back</button>
+                    <button class="action-btn" id="btn-sim2-next" onclick="setSim2(sim2Step + 1)" style="width:100%">Next →</button>
+                    <button class="action-btn" onclick="setSim2(0)" style="background:#e5e7eb; color:var(--text-dark);">↺ Reset</button>
+                </div>
+            </div>
+            <div class="sim-right">
+                <div class="reg-grid">
+                    <div class="reg" id="sim2-reg-rax">%rax (Output): <span id="sim2-val-rax">0</span></div>
+                    <div class="reg" id="sim2-reg-rip">%rip (Line): <span id="sim2-val-rip">main</span></div>
+                    <div class="reg" id="sim2-reg-rbp">%rbp: <span id="sim2-val-rbp">0x2000</span></div>
+                    <div class="reg" id="sim2-reg-rsp">%rsp: <span id="sim2-val-rsp">0x2000</span></div>
+                </div>
+                <div class="stack-wrapper">
+                    <div class="ptr ptr-rbp" id="sim2-ptr-rbp">▶ rbp</div>
+                    <div class="ptr ptr-rsp" id="sim2-ptr-rsp">▶ rsp</div>
+                    <div id="sim2-stack-panel"></div>
+                </div>
+            </div>
+        </div>
+
+        <hr style="border: 2px dashed var(--text-dark); margin: 40px 0;">
+
+        <h2>Simulator 3: Control Flow (Branching & Loops)</h2>
+        <p>The CPU only knows how to execute instructions sequentially (top-to-bottom). To create <code>if/else</code> statements or <code>while</code> loops, the compiler generates <strong>Compare (cmp)</strong> and <strong>Conditional Jump (jCC)</strong> instructions.</p>
+        <p>This trace follows the complex <code>if / else if / else</code> logic from our <strong>Binary Search</strong> example. We are searching for <code>key = 12</code>, but the current <code>arr[mid] = 30</code>. Watch how the CPU compares the values in the RAM Stack and physically jumps over the blocks of code it shouldn't execute!</p>
+
+        <div class="dashed-box sim-container" style="align-items: flex-start;">
+            <div class="sim-left">
+                <div id="sim3-asm-panel"></div>
+                
+                <div class="controls" style="flex-direction: column; gap: 10px; margin-top: 15px;">
+                    <div style="display:flex; gap:10px; width:100%">
+                        <button class="action-btn" id="btn-sim3-prev" onclick="setSim3(sim3Step - 1)" style="width:100%">← Back</button>
+                        <button class="action-btn" id="btn-sim3-next" onclick="setSim3(sim3Step + 1)" style="width:100%">Step Execution ➔</button>
+                    </div>
+                    <button class="action-btn" onclick="setSim3(0)" style="background:#e5e7eb; color:var(--text-dark); width:100%">↺ Reset Trace</button>
+                </div>
+            </div>
+            
+            <div class="sim-right retro-box" style="margin: 0; padding: 15px; background: var(--white);">
+                <div class="reg-grid">
+                    <div class="reg" id="sim3-reg-rax">%rax (Truck): <span id="sim3-val-rax">0</span></div>
+                    <div class="reg" id="sim3-reg-rbp">%rbp: <span id="sim3-val-rbp">0x3000</span></div>
+                </div>
+                <div class="stack-wrapper">
+                    <div class="ptr ptr-rbp" id="sim3-ptr-rbp">▶ rbp</div>
+                    <div class="ptr ptr-rsp" id="sim3-ptr-rsp">▶ rsp</div>
+                    <div id="sim3-stack-panel"></div>
+                </div>
+                <div id="sim3-desc" style="padding: 12px; background: #f8fafc; border: 1px dashed var(--text-dark); border-radius: 4px; font-weight: bold; color: var(--accent-purple); margin-top: 20px; min-height: 50px; font-size: 0.95rem; line-height: 1.4;">Waiting to start...</div>
+            </div>
+        </div>
+
+        <div style="margin-top: 40px;">
+            <h2>Why Avoid Register Allocation?</h2>
+            <div class="dashed-box">
+                <p>The most highly-optimized compilers (like GCC with <span class="hl-yellow" style="padding: 2px 4px; font-weight: bold; border-radius: 2px;">-O3</span>) use complex algorithms like <em>Graph Coloring</em> to keep variables permanently inside CPU registers rather than writing to RAM.</p>
+                <p>However, we explicitly chose <span class="hl-cyan" style="font-weight: bold;">not</span> to do this. Here is why:</p>
+                <ul>
+                    <li><strong>Register Starvation:</strong> x86-64 only has ~14 general-purpose registers. If a function has 20 variables, the compiler must write highly complex code to "spill" variables back to RAM and track where they went.</li>
+                    <li><strong>Algorithmic Complexity:</strong> It requires tracking "Live Ranges" across the entire Control Flow Graph to know exactly when a register can be safely overwritten.</li>
+                </ul>
+            </div>
+        </div>
+
     </div>
 
     <script>
-        const START_ADDR = 0x1000;
-        
-        const INSTRUCTIONS = [
-            { code: "pushq %rbp", comment: "Save caller's frame", action: (s) => { s.rsp -= 8; s.mem[s.rsp] = { label: "Saved %rbp" }; } },
-            { code: "movq %rsp, %rbp", comment: "Set Base Pointer", action: (s) => { s.rbp = s.rsp; } },
-            { code: "subq $32, %rsp", comment: "Allocate Memory", action: (s) => { s.rsp -= 32; } },
-            { code: "movq $10, -8(%rbp)", comment: "x = 10", action: (s) => { s.mem[s.rbp - 8] = { label: "var x: 10" }; s.highlight = s.rbp - 8;} },
-            { code: "movq -8(%rbp), %rax", comment: "Load x to %rax", action: (s) => { s.rax = 10; s.changedReg = 'rax'; } },
-            { code: "movq %rsp, %r15", comment: "Backup %rsp", action: (s) => { s.r15 = s.rsp; s.changedReg = 'r15'; } },
-            { code: "andq $-16, %rsp", comment: "Force 16-Byte Align", action: (s) => { 
-                const rem = s.rsp % 16; 
-                if (rem !== 0) { 
-                    s.rsp -= rem; 
-                    s.mem[s.rsp] = { label: "16-Byte Spacer", isPadding: true }; 
-                    s.highlight = s.rsp;
-                } 
-            }},
-            { code: "call viz_print", comment: "Safe C-Library Call", action: (s) => {} },
-            { code: "movq %r15, %rsp", comment: "Restore %rsp", action: (s) => { s.rsp = s.r15; s.changedReg = 'rsp'; } },
-            { code: "leave", comment: "Restore frame", action: (s) => { s.rsp = s.rbp + 8; s.rbp = START_ADDR; } },
-            { code: "ret", comment: "Return", action: (s) => {} }
-        ];
-
-        let currentStep = 0;
-        let currentState = {};
-
+        /* =========================================================
+           UTILITIES
+           ========================================================= */
         function toHex(num) { return `0x${num.toString(16).toUpperCase()}`; }
 
-        function calculateState(step) {
-            let s = { rax: 0, r15: 0, rbp: START_ADDR, rsp: START_ADDR, mem: {}, changedReg: null, highlight: null };
-            for (let i = 0; i < step; i++) {
-                s.changedReg = null; s.highlight = null; 
-                INSTRUCTIONS[i].action(s);
-            }
-            return s;
-        }
+        /* =========================================================
+           SIMULATOR 1: ALIGNMENT & LOAD-COMPUTE-STORE
+           ========================================================= */
+        const S1_START = 0x1000;
+        const SIM1_INST = [
+            { code: "pushq %rbp", comment: "Save caller's frame", act: (s) => { s.rsp -= 8; s.mem[s.rsp] = { label: "Saved %rbp (Caller)", isBorder: true }; } },
+            { code: "movq %rsp, %rbp", comment: "Set Base Pointer", act: (s) => { s.rbp = s.rsp; } },
+            { code: "subq $32, %rsp", comment: "Allocate Locals", act: (s) => { s.rsp -= 32; } },
+            { code: "movq $10, -8(%rbp)", comment: "x = 10", act: (s) => { s.mem[s.rbp - 8] = { label: "var x: 10" }; s.hl = s.rbp - 8;} },
+            { code: "movq -8(%rbp), %rax", comment: "Load x to %rax", act: (s) => { s.rax = 10; s.cReg = 'rax'; } },
+            { code: "movq %rsp, %r15", comment: "Backup %rsp", act: (s) => { s.r15 = s.rsp; s.cReg = 'r15'; } },
+            { code: "andq $-16, %rsp", comment: "Force 16-Byte Align", act: (s) => { 
+                const rem = s.rsp % 16; 
+                if (rem !== 0) { s.rsp -= rem; s.mem[s.rsp] = { label: "16-Byte Pad", isPadding: true }; s.hl = s.rsp; } 
+            }},
+            { code: "call viz_print", comment: "Safe C-Library Call", act: (s) => {} },
+            { code: "movq %r15, %rsp", comment: "Restore %rsp", act: (s) => { s.rsp = s.r15; s.cReg = 'rsp'; } },
+            { code: "leave", comment: "Restore frame", act: (s) => { s.rsp = s.rbp + 8; s.rbp = S1_START; } },
+            { code: "ret", comment: "Return", act: (s) => {} }
+        ];
 
-        function setStep(newStep) {
-            currentStep = Math.max(0, Math.min(INSTRUCTIONS.length, newStep));
-            currentState = calculateState(currentStep);
-            renderUI();
-        }
-
-        function renderUI() {
-            const codePanel = document.getElementById('sim-code-panel');
-            codePanel.innerHTML = '';
+        let sim1Step = 0;
+        function setSim1(newStep) {
+            sim1Step = Math.max(0, Math.min(SIM1_INST.length, newStep));
+            let s = { rax: 0, r15: 0, rbp: S1_START, rsp: S1_START, mem: {}, cReg: null, hl: null };
+            for (let i = 0; i < sim1Step; i++) { s.cReg = null; s.hl = null; SIM1_INST[i].act(s); }
             
-            INSTRUCTIONS.forEach((inst, idx) => {
-                const div = document.createElement('div');
-                div.className = `code-row ${idx < currentStep ? 'executed' : ''} ${idx === currentStep - 1 ? 'active' : ''}`;
-                div.onclick = () => setStep(idx + 1);
-                div.innerHTML = `<span>${inst.code}</span> <span class="comment">; ${inst.comment}</span>`;
-                codePanel.appendChild(div);
+            let html = '';
+            SIM1_INST.forEach((inst, i) => {
+                html += `<div class="code-row ${i < sim1Step ? 'executed' : ''} ${i === sim1Step - 1 ? 'active' : ''}" onclick="setSim1(${i + 1})"><span>${inst.code}</span> <span class="comment">; ${inst.comment}</span></div>`;
             });
+            document.getElementById('sim1-code-panel').innerHTML = html;
+            document.getElementById('btn-sim1-prev').disabled = sim1Step === 0;
+            document.getElementById('btn-sim1-next').disabled = sim1Step === SIM1_INST.length;
+            document.getElementById('sim1-val-rax').innerText = s.rax;
+            document.getElementById('sim1-val-r15').innerText = s.r15 ? toHex(s.r15) : '0';
+            document.getElementById('sim1-val-rbp').innerText = toHex(s.rbp);
+            document.getElementById('sim1-val-rsp').innerText = toHex(s.rsp);
 
-            document.getElementById('btn-sim-prev').disabled = currentStep === 0;
-            document.getElementById('btn-sim-next').disabled = currentStep === INSTRUCTIONS.length;
-
-            document.getElementById('val-rax').innerText = currentState.rax;
-            document.getElementById('val-r15').innerText = currentState.r15 ? toHex(currentState.r15) : '0';
-            document.getElementById('val-rbp').innerText = toHex(currentState.rbp);
-            document.getElementById('val-rsp').innerText = toHex(currentState.rsp);
-
-            ['rax', 'r15', 'rsp'].forEach(reg => {
-                const el = document.getElementById(`reg-${reg}`);
-                if (currentState.changedReg === reg) el.classList.add('changed');
-                else el.classList.remove('changed');
+            ['rax', 'r15', 'rbp', 'rsp'].forEach(reg => {
+                const el = document.getElementById(`sim1-reg-${reg}`);
+                if (s.cReg === reg) el.classList.add('changed'); else el.classList.remove('changed');
             });
+            renderStack('sim1', s, S1_START, S1_START - 64);
+        }
 
-            const stackPanel = document.getElementById('sim-stack-panel');
-            stackPanel.innerHTML = '';
+        /* =========================================================
+           SIMULATOR 2: RECURSION STACK (Extended with explicit leave breakdown)
+           ========================================================= */
+        const S2_START = 0x2000;
+        const SIM2_INST = [
+            { code: "call fact", comment: "main() calls fact(2)", act: (s) => { s.rsp -= 8; s.mem[s.rsp] = { label: "Return Addr (main)" }; s.rip="fact(2)"; s.cReg='rip'; } },
+            { code: "pushq %rbp", comment: "fact(2) Prologue", act: (s) => { s.rsp -= 8; s.mem[s.rsp] = { label: "Saved %rbp (main)", isBorder:true }; } },
+            { code: "movq %rsp, %rbp", comment: "New Frame for fact(2)", act: (s) => { s.rbp = s.rsp; } },
+            { code: "subq $16, %rsp", comment: "Allocate space for n", act: (s) => { s.rsp -= 16; } },
+            { code: "movq $2, -8(%rbp)", comment: "n = 2", act: (s) => { s.mem[s.rbp - 8] = { label: "var n: 2" }; s.hl = s.rbp - 8;} },
+            
+            { code: "call fact", comment: "fact(2) calls fact(1)", act: (s) => { s.rsp -= 8; s.mem[s.rsp] = { label: "Return Addr (fact 2)" }; s.rip="fact(1)"; s.cReg='rip'; } },
+            { code: "pushq %rbp", comment: "fact(1) Prologue", act: (s) => { s.rsp -= 8; s.mem[s.rsp] = { label: "Saved %rbp (fact 2)", isBorder:true }; } },
+            { code: "movq %rsp, %rbp", comment: "New Frame for fact(1)", act: (s) => { s.rbp = s.rsp; } },
+            { code: "subq $16, %rsp", comment: "Allocate space for n", act: (s) => { s.rsp -= 16; } },
+            { code: "movq $1, -8(%rbp)", comment: "n = 1", act: (s) => { s.mem[s.rbp - 8] = { label: "var n: 1" }; s.hl = s.rbp - 8;} },
+            
+            { code: "movq $1, %rax", comment: "Base case! result = 1", act: (s) => { s.rax = 1; s.cReg = 'rax'; } },
+            
+            // Breaking down LEAVE into its explicit hardware steps
+            { code: "↳ movq %rbp, %rsp", comment: "leave (1/2): Collapse Sandbox", isSub: true, act: (s) => { s.rsp = s.rbp; s.cReg = 'rsp'; } },
+            { code: "↳ popq %rbp", comment: "leave (2/2): Restore Caller's Anchor", isSub: true, act: (s) => { s.rbp = S2_START - 16; s.rsp += 8; s.cReg = 'rbp'; } },
+            { code: "ret", comment: "Pop Return Addr, go back to fact(2)", act: (s) => { s.rsp += 8; s.rip="fact(2)"; s.cReg='rip';} },
+            
+            { code: "imulq -8(%rbp), %rax", comment: "rax = 1 * n (n is 2)", act: (s) => { s.rax = 2; s.cReg = 'rax'; s.hl = s.rbp - 8;} },
+            
+            // Breaking down the second LEAVE
+            { code: "↳ movq %rbp, %rsp", comment: "leave (1/2): Collapse Sandbox", isSub: true, act: (s) => { s.rsp = s.rbp; s.cReg = 'rsp'; } },
+            { code: "↳ popq %rbp", comment: "leave (2/2): Restore Caller's Anchor", isSub: true, act: (s) => { s.rbp = S2_START; s.rsp += 8; s.cReg = 'rbp'; } },
+            { code: "ret", comment: "Pop Return Addr, go back to main", act: (s) => { s.rsp += 8; s.rip="main"; s.cReg='rip'; } }
+        ];
 
-            let rbpTop = -100, rspTop = -100, slotIndex = 0;
-            const SLOT_HEIGHT = 42; 
+        let sim2Step = 0;
+        function setSim2(newStep) {
+            sim2Step = Math.max(0, Math.min(SIM2_INST.length, newStep));
+            let s = { rax: 0, rip: "main", rbp: S2_START, rsp: S2_START, mem: {}, cReg: null, hl: null };
+            for (let i = 0; i < sim2Step; i++) { s.cReg = null; s.hl = null; SIM2_INST[i].act(s); }
+            
+            let html = '';
+            SIM2_INST.forEach((inst, i) => {
+                let subClass = inst.isSub ? 'sub-step' : '';
+                html += `<div class="code-row ${subClass} ${i < sim2Step ? 'executed' : ''} ${i === sim2Step - 1 ? 'active' : ''}" onclick="setSim2(${i + 1})" style="padding: 4px 8px; margin-bottom: 2px;"><span>${inst.code}</span> <span class="comment">; ${inst.comment}</span></div>`;
+            });
+            document.getElementById('sim2-code-panel').innerHTML = html;
+            document.getElementById('btn-sim2-prev').disabled = sim2Step === 0;
+            document.getElementById('btn-sim2-next').disabled = sim2Step === SIM2_INST.length;
 
-            for (let addr = START_ADDR; addr >= START_ADDR - 64; addr -= 8) {
-                const mem = currentState.mem[addr];
-                const isEmpty = !mem && addr <= currentState.rsp;
-                const isHighlight = addr === currentState.highlight;
+            document.getElementById('sim2-val-rax').innerText = s.rax;
+            document.getElementById('sim2-val-rip').innerText = s.rip;
+            document.getElementById('sim2-val-rbp').innerText = toHex(s.rbp);
+            document.getElementById('sim2-val-rsp').innerText = toHex(s.rsp);
+
+            ['rax', 'rip', 'rbp', 'rsp'].forEach(reg => {
+                const el = document.getElementById(`sim2-reg-${reg}`);
+                if (s.cReg === reg) el.classList.add('changed'); else el.classList.remove('changed');
+            });
+            renderStack('sim2', s, S2_START, S2_START - 96);
+        }
+
+        /* =========================================================
+           SIMULATOR 3: CONTROL FLOW STACK TRACE
+           ========================================================= */
+        const S3_START = 0x3000;
+        const SIM3_CODE = [
+            { code: "; if (arr[mid] == key)" },
+            { code: "movq -8(%rbp), %rax" },
+            { code: "cmp -16(%rbp), %rax" },
+            { code: "jne .L_ELSE_1", cls: "jump" },
+            { code: "movq -24(%rbp), %rax" },
+            { code: "jmp .L_END", cls: "jump" },
+            { code: ".L_ELSE_1:" },
+            { code: "; if (key < arr[mid])" },
+            { code: "movq -16(%rbp), %rax" },
+            { code: "cmp -8(%rbp), %rax" },
+            { code: "jge .L_ELSE_2", cls: "jump" },
+            { code: "call binarySearch" },
+            { code: "jmp .L_END", cls: "jump" },
+            { code: ".L_ELSE_2:" },
+            { code: "call binarySearch" },
+            { code: ".L_END:" }
+        ];
+
+        // Trace logic mapping specific lines to state changes
+        const S3_TRACE = [
+            { line: 0, act: (s) => {}, msg: "Evaluating first IF condition: Is arr[mid] == key?" },
+            { line: 1, act: (s) => { s.rax = 30; s.cReg = 'rax'; s.hl = s.rbp - 8; }, msg: "Load arr[mid] (value: 30) into the rax truck." },
+            { line: 2, act: (s) => { s.hl = s.rbp - 16; }, msg: "Compare key (value: 12) from RAM against rax (30)." },
+            { line: 3, act: (s) => {}, msg: "12 is NOT EQUAL to 30. The CPU executes the jne (Jump if Not Equal) instruction!" },
+            { line: 6, act: (s) => {}, msg: "JUMPED physically over the true block code. Landed at .L_ELSE_1" },
+            { line: 7, act: (s) => {}, msg: "Evaluating second IF condition: Is key < arr[mid]?" },
+            { line: 8, act: (s) => { s.rax = 12; s.cReg = 'rax'; s.hl = s.rbp - 16; }, msg: "Load key (value: 12) into the rax truck." },
+            { line: 9, act: (s) => { s.hl = s.rbp - 8; }, msg: "Compare arr[mid] (value: 30) against rax (12)." },
+            { line: 10, act: (s) => {}, msg: "12 is strictly LESS THAN 30. The jge (Jump if Greater/Equal) is IGNORED." },
+            { line: 11, act: (s) => { s.rsp -= 8; s.mem[s.rsp] = { label: "Return Addr", isBorder:true }; s.hl=s.rsp;}, msg: "CPU falls through and executes 'Recurse Left' code block! (Pushes Return Address)" },
+            { line: 12, act: (s) => {}, msg: "Unconditional Jump to skip the ELSE_2 block." },
+            { line: 15, act: (s) => {}, msg: "JUMPED to .L_END. Branching logic safely completed." }
+        ];
+
+        let sim3Step = 0;
+        function setSim3(newStep) {
+            sim3Step = Math.max(0, Math.min(S3_TRACE.length, newStep));
+            
+            // Build Context State
+            let s = { rax: 0, rbp: S3_START, rsp: S3_START - 24, mem: {}, cReg: null, hl: null };
+            // Pre-load the stack with the binary search values
+            s.mem[S3_START - 8] = { label: "arr[mid]" };
+            s.mem[S3_START - 16] = { label: "key" };
+            s.mem[S3_START - 24] = { label: "mid (index)" };
+            
+            // Apply Actions up to current step
+            for (let i = 0; i < sim3Step; i++) { s.cReg = null; s.hl = null; S3_TRACE[i].act(s); }
+            
+            // Render Code Highlight
+            let html = '';
+            const activeLine = sim3Step > 0 ? S3_TRACE[sim3Step - 1].line : -1;
+            
+            SIM3_CODE.forEach((line, i) => {
+                let isAct = (i === activeLine) ? 'active' : '';
+                let isExec = false;
+                let traceIndex = -1;
+                for(let t = 0; t < S3_TRACE.length; t++) {
+                    if(S3_TRACE[t].line === i) {
+                        traceIndex = t;
+                        if (t < sim3Step - 1) isExec = true;
+                    }
+                }
+                
+                let cls = isAct || (isExec ? 'executed' : '');
+                let clickAction = traceIndex >= 0 ? `onclick="setSim3(${traceIndex + 1})"` : "";
+                
+                // Keep Labels and comments from acting like buttons visually
+                let lblCls = line.code.includes(":") || line.code.includes(";") ? "label" : "";
+                if(lblCls) clickAction = "";
+                
+                html += `<div class="code-row ${cls} ${lblCls} ${line.cls || ''}" ${clickAction} style="padding: 4px 8px; margin-bottom: 2px;">
+                    <span>${line.code.replace(/ /g, '&nbsp;')}</span>
+                </div>`;
+            });
+            document.getElementById('sim3-asm-panel').innerHTML = html;
+
+            document.getElementById('btn-sim3-next').disabled = sim3Step === S3_TRACE.length;
+            document.getElementById('btn-sim3-prev').disabled = sim3Step === 0;
+            
+            // Render Description
+            let desc = "Waiting to start...";
+            if (sim3Step > 0) desc = S3_TRACE[sim3Step - 1].msg;
+            if (sim3Step === S3_TRACE.length) desc += " ✅ Done.";
+            document.getElementById('sim3-desc').innerText = desc;
+
+            // Render Registers & Stack
+            document.getElementById('sim3-val-rax').innerText = s.rax;
+            document.getElementById('sim3-val-rbp').innerText = toHex(s.rbp);
+            if (s.cReg === 'rax') document.getElementById('sim3-reg-rax').classList.add('changed'); 
+            else document.getElementById('sim3-reg-rax').classList.remove('changed');
+
+            const panel = document.getElementById(`sim3-stack-panel`);
+            panel.innerHTML = '';
+            let rbpTop = -100, rspTop = -100, idx = 0;
+            const H = 42; 
+
+            // Draw stack slots
+            for (let addr = S3_START; addr >= S3_START - 32; addr -= 8) {
+                const mem = s.mem[addr];
+                const isEmpty = !mem && addr <= s.rsp;
+                const isHl = addr === s.hl;
                 
                 const div = document.createElement('div');
-                div.className = `stack-slot ${isEmpty ? 'empty' : ''} ${isHighlight ? 'active' : ''} ${mem?.isPadding ? 'padding' : ''}`;
+                div.className = `stack-slot ${isEmpty ? 'empty' : ''} ${isHl ? 'active' : ''} ${mem?.isBorder ? 'frame-boundary' : ''}`;
+                
+                // Hardcoded values for the trace context
+                let valStr = "";
+                if(addr === S3_START - 8) valStr = "<strong>30</strong>";
+                if(addr === S3_START - 16) valStr = "<strong>12</strong>";
+                if(addr === S3_START - 24) valStr = "<strong>2</strong>";
+
                 let label = mem ? mem.label : (isEmpty ? '-' : 'Unallocated');
-                div.innerHTML = `<span class="stack-addr">${toHex(addr)}</span> <span>${label}</span>`;
-                stackPanel.appendChild(div);
+                div.innerHTML = `<span class="stack-addr">${toHex(addr)}</span> <span>${label}</span> ${valStr}`;
+                panel.appendChild(div);
 
-                if (addr === currentState.rbp) rbpTop = slotIndex * SLOT_HEIGHT; 
-                if (addr === currentState.rsp) rspTop = slotIndex * SLOT_HEIGHT;
-                slotIndex++;
+                if (addr === s.rbp) rbpTop = idx * H; 
+                if (addr === s.rsp) rspTop = idx * H;
+                idx++;
             }
-
-            document.getElementById('ptr-rbp').style.top = `${rbpTop}px`;
-            document.getElementById('ptr-rsp').style.top = `${rspTop}px`;
+            document.getElementById(`sim3-ptr-rbp`).style.top = `${rbpTop}px`;
+            document.getElementById(`sim3-ptr-rsp`).style.top = `${rspTop}px`;
         }
 
-        setStep(0);
+        // Shared Stack Renderer for S1 & S2
+        function renderStack(prefix, state, startAddr, endAddr) {
+            const panel = document.getElementById(`${prefix}-stack-panel`);
+            panel.innerHTML = '';
+            let rbpTop = -100, rspTop = -100, idx = 0;
+            const H = 42; 
+
+            for (let addr = startAddr; addr >= endAddr; addr -= 8) {
+                const mem = state.mem[addr];
+                const isEmpty = !mem && addr <= state.rsp;
+                const isHl = addr === state.hl;
+                
+                const div = document.createElement('div');
+                div.className = `stack-slot ${isEmpty ? 'empty' : ''} ${isHl ? 'active' : ''} ${mem?.isPadding ? 'padding' : ''} ${mem?.isBorder ? 'frame-boundary' : ''}`;
+                let label = mem ? mem.label : (isEmpty ? '-' : 'Unallocated');
+                div.innerHTML = `<span class="stack-addr">${toHex(addr)}</span> <span>${label}</span>`;
+                panel.appendChild(div);
+
+                if (addr === state.rbp) rbpTop = idx * H; 
+                if (addr === state.rsp) rspTop = idx * H;
+                idx++;
+            }
+
+            document.getElementById(`${prefix}-ptr-rbp`).style.top = `${rbpTop}px`;
+            document.getElementById(`${prefix}-ptr-rsp`).style.top = `${rspTop}px`;
+        }
+
+        // Init All
+        setSim1(0);
+        setSim2(0);
+        setSim3(0);
     </script>
-    
 </body>
 </html>
