@@ -181,17 +181,6 @@ subq $1024, %rsp     # Allocate memory for locals</pre>
             </div>
         </div>
 
-        <div style="margin-top: 40px;">
-            <h2>Why Avoid Register Allocation?</h2>
-            <div class="dashed-box">
-                <p>The most highly-optimized compilers (like GCC with <span class="hl-yellow" style="padding: 2px 4px; font-weight: bold; border-radius: 2px;">-O3</span>) use complex algorithms like <em>Graph Coloring</em> to keep variables permanently inside CPU registers rather than writing to RAM.</p>
-                <p>However, we explicitly chose <span class="hl-cyan" style="font-weight: bold;">not</span> to do this. Here is why:</p>
-                <ul>
-                    <li><strong>Register Starvation:</strong> x86-64 only has ~14 general-purpose registers. If a function has 20 variables, the compiler must write highly complex code to "spill" variables back to RAM and track where they went.</li>
-                    <li><strong>Algorithmic Complexity:</strong> It requires tracking "Live Ranges" across the entire Control Flow Graph to know exactly when a register can be safely overwritten.</li>
-                </ul>
-            </div>
-        </div>
 
     </div>
 
