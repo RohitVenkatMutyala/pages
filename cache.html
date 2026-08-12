@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | hardware part 2: cache & bus</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+            
+            /* Hierarchy Colors */
+            --c-cpu: #ef4444; 
+            --c-l1: #f59e0b; 
+            --c-l2: #10b981; 
+            --c-l3: #3b82f6; 
+            --c-bus: #64748b;
+            --c-ram: #8b5cf6;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1500px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.2rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.9rem; margin: 0;}
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 10px 15px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase; font-size: 0.85rem;
+        }
+        .ui-btn:hover:not(:disabled) { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-action { background: var(--hl-cyan); }
+        .btn-auto { background: #10b981; color: white;}
+        .reset-btn { background: #ef4444; color: var(--white); }
+
+        /* DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; align-items: start;}
+        
+        /* LEFT: HIERARCHY VISUALIZER */
+        .hierarchy-container { background: #fdfcfa; border: 4px dashed var(--accent-purple); padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 15px; position: relative; min-height: 600px;}
+        
+        .h-box { width: 60%; border: 4px solid var(--text-dark); padding: 15px; text-align: center; position: relative; background: var(--white); box-shadow: 4px 4px 0 var(--text-dark); transition: all 0.2s;}
+        .h-box.active-search { transform: scale(1.05); box-shadow: 0 0 20px var(--hl-yellow), 4px 4px 0 var(--text-dark); border-color: var(--hl-yellow); z-index: 10;}
+        .h-box.hit { background: #dcfce7; border-color: #10b981; animation: popGreen 0.4s;}
+        .h-box.miss { background: #fee2e2; border-color: #ef4444; }
+
+        .h-title { font-weight: 900; font-size: 1.2rem; text-transform: uppercase;}
+        .h-sub { font-family: var(--font-mono); font-size: 0.8rem; color: #64748b; font-weight: bold; margin-top: 5px;}
+        .h-stats { position: absolute; right: 10px; top: 10px; font-size: 0.75rem; font-weight: bold; background: #e2e8f0; padding: 2px 6px; border: 1px solid var(--text-dark);}
+
+        /* Specific Box Overrides */
+        #box-cpu { border-color: var(--c-cpu); background: #fef2f2; width: 40%;}
+        #box-cpu .h-title { color: var(--c-cpu); }
+        
+        #box-l1 { border-color: var(--c-l1); width: 50%;}
+        #box-l2 { border-color: var(--c-l2); width: 60%;}
+        #box-l3 { border-color: var(--c-l3); width: 75%;}
+        
+        #box-bus { border: none; background: repeating-linear-gradient(90deg, var(--c-bus), var(--c-bus) 10px, transparent 10px, transparent 20px); height: 15px; width: 90%; box-shadow: none;}
+        
+        #box-ram { border-color: var(--c-ram); width: 90%; background: #f5f3ff;}
+        #box-ram .h-title { color: var(--c-ram); }
+
+        /* Animation Packets */
+        .packet { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--text-dark); border: 2px solid white; z-index: 50; transition: all 0.3s linear; left: 50%; transform: translateX(-50%); opacity: 0;}
+        .packet.req { background: #ef4444; box-shadow: 0 0 10px #ef4444; opacity: 1;}
+        .packet.data { background: #10b981; box-shadow: 0 0 10px #10b981; opacity: 1;}
+
+        /* RIGHT: METRICS & TERMINAL */
+        .metrics-panel { display: flex; flex-direction: column; gap: 20px; }
+        
+        .metrics-box { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px; color: white;}
+        .m-header { font-weight: 900; font-size: 1.1rem; text-transform: uppercase; border-bottom: 2px dashed #475569; padding-bottom: 5px; margin-bottom: 15px; color: var(--hl-cyan);}
+        
+        .stat-row { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.9rem; margin-bottom: 8px; align-items: center;}
+        .stat-val { font-weight: 900; color: var(--white); background: #334155; padding: 2px 8px; border-radius: 4px;}
+        
+        .amat-box { background: #0f172a; padding: 15px; border: 2px solid #475569; margin-top: 15px; text-align: center;}
+        .amat-val { font-size: 2.5rem; color: var(--hl-yellow); font-weight: 900; line-height: 1;}
+        .amat-sub { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-top: 5px;}
+
+        .os-log-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); flex: 1; display: flex; flex-direction: column;}
+        .log-header { font-weight: 900; font-size: 1rem; text-transform: uppercase; padding: 10px; border-bottom: 3px solid var(--text-dark); background: #f8fafc;}
+        .os-log { font-family: var(--font-mono); font-size: 0.8rem; overflow-y: auto; padding: 10px; height: 250px;}
+        .os-log p { margin: 4px 0; border-bottom: 1px dashed #cbd5e1; padding-bottom: 4px;}
+        
+        .log-req { color: #3b82f6; font-weight: bold;}
+        .log-hit { color: #10b981; font-weight: bold;}
+        .log-miss { color: #ef4444; }
+        .log-sum { color: #8b5cf6; font-weight: bold;}
+
+        @keyframes popGreen { 50% { transform: scale(1.05); } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1>cache & bus</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. The Memory Wall</h3>
+                    <p class="definition">CPUs are mathematically starving for data.</p>
+                    <ul>
+                        <li>A modern CPU can execute an instruction in <strong>1 clock cycle</strong>.</li>
+                        <li>Fetching data from physical RAM takes about <strong>200 clock cycles</strong> because the signal has to leave the CPU chip, travel across the motherboard via the System Bus, and find the data in the RAM sticks.</li>
+                        <li>If the CPU always read from RAM, it would spend 99% of its time frozen.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. The Cache Hierarchy</h3>
+                    <p class="definition">To fix this, we glue tiny amounts of ultra-fast memory directly onto the CPU chip.</p>
+                    <ul>
+                        <li><strong style="color:var(--c-l1)">L1 Cache:</strong> Extremely tiny (e.g., 32KB), but blazing fast (1 cycle cost). Private to each core.</li>
+                        <li><strong style="color:var(--c-l2)">L2 Cache:</strong> Slightly larger (e.g., 512KB), slightly slower (10 cycles).</li>
+                        <li><strong style="color:var(--c-l3)">L3 Cache:</strong> Large (e.g., 32MB), slower (40 cycles). Shared among all cores.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. Hits, Misses, and AMAT</h3>
+                    <p class="definition">The OS constantly tries to guess what data you need next and moves it into L1.</p>
+                    <ul>
+                        <li><strong>Cache Hit:</strong> The data is found! (Fast).</li>
+                        <li><strong>Cache Miss:</strong> The data isn't there. The CPU stalls and searches the next level down.</li>
+                        <li><strong>AMAT (Average Memory Access Time):</strong> The ultimate metric. By having a 90% Hit Rate in L1, the *average* cost to fetch data drops from 200 cycles down to roughly 2 or 3 cycles!</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <button class="ui-btn btn-action" onclick="requestData()" id="btn-req">⚡ Request Random Data</button>
+                <button class="ui-btn btn-auto" onclick="toggleAuto()" id="btn-auto">▶ Auto Simulate Traffic</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn reset-btn" onclick="resetSim()">↺ Reset Hardware</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="hierarchy-container" id="hier-cont">
+                
+                <div class="packet" id="anim-packet"></div>
+
+                <div class="h-box" id="box-cpu">
+                    <div class="h-title">CPU Core</div>
+                    <div class="h-sub">Executing Instructions</div>
+                </div>
+
+                <div class="h-box" id="box-l1">
+                    <div class="h-stats"><span id="stat-l1-hits">0</span> Hits</div>
+                    <div class="h-title">L1 Cache</div>
+                    <div class="h-sub">Cost: 1 Cycle | Size: 32 KB</div>
+                </div>
+
+                <div class="h-box" id="box-l2">
+                    <div class="h-stats"><span id="stat-l2-hits">0</span> Hits</div>
+                    <div class="h-title">L2 Cache</div>
+                    <div class="h-sub">Cost: 10 Cycles | Size: 512 KB</div>
+                </div>
+
+                <div class="h-box" id="box-l3">
+                    <div class="h-stats"><span id="stat-l3-hits">0</span> Hits</div>
+                    <div class="h-title">L3 Cache (Shared)</div>
+                    <div class="h-sub">Cost: 40 Cycles | Size: 32 MB</div>
+                </div>
+
+                <div class="h-box" id="box-bus" title="System Bus"></div>
+
+                <div class="h-box" id="box-ram">
+                    <div class="h-stats"><span id="stat-ram-hits">0</span> Accesses</div>
+                    <div class="h-title">Main Memory (RAM)</div>
+                    <div class="h-sub">Cost: 200 Cycles | Size: 16 GB</div>
+                </div>
+
+            </div>
+
+            <div class="metrics-panel">
+                
+                <div class="metrics-box">
+                    <div class="m-header">Hardware Telemetry</div>
+                    <div class="stat-row"><span>Total Data Requests:</span> <span class="stat-val" id="m-reqs">0</span></div>
+                    <div class="stat-row"><span>Total Cycles Spent:</span> <span class="stat-val" id="m-cycles">0</span></div>
+                    
+                    <div class="amat-box">
+                        <div class="amat-val" id="m-amat">0.0</div>
+                        <div class="amat-sub">Average Memory Access Time (Cycles)</div>
+                    </div>
+                </div>
+
+                <div class="os-log-box">
+                    <div class="log-header">Memory Management Unit (MMU) Log</div>
+                    <div class="os-log" id="os-log">
+                        </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // --- SYSTEM STATE ---
+        let stats = { reqs: 0, cycles: 0, l1: 0, l2: 0, l3: 0, ram: 0 };
+        let isAnimating = false;
+        let autoInterval = null;
+
+        // Configuration
+        const COST = { L1: 1, L2: 10, L3: 40, RAM: 200 };
+        
+        // Realistic hit probabilities (Cumulative)
+        const PROB = { L1: 0.65, L2: 0.85, L3: 0.95 }; 
+        // Example: 65% hit L1. If miss, 20% hit L2. If miss, 10% hit L3. Remaining 5% hit RAM.
+
+        // DOM Elements
+        const packet = document.getElementById('anim-packet');
+        const boxes = {
+            CPU: document.getElementById('box-cpu'),
+            L1: document.getElementById('box-l1'),
+            L2: document.getElementById('box-l2'),
+            L3: document.getElementById('box-l3'),
+            RAM: document.getElementById('box-ram')
+        };
+        const logUI = document.getElementById('os-log');
+        const btnReq = document.getElementById('btn-req');
+        const btnAuto = document.getElementById('btn-auto');
+
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        // --- CORE LOGIC ---
+
+        function hLog(msg, type="log-action") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerHTML = msg;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight;
+        }
+
+        function updateMetricsUI() {
+            document.getElementById('m-reqs').innerText = stats.reqs;
+            document.getElementById('m-cycles').innerText = stats.cycles;
+            
+            document.getElementById('stat-l1-hits').innerText = stats.l1;
+            document.getElementById('stat-l2-hits').innerText = stats.l2;
+            document.getElementById('stat-l3-hits').innerText = stats.l3;
+            document.getElementById('stat-ram-hits').innerText = stats.ram;
+
+            let amat = stats.reqs === 0 ? 0 : (stats.cycles / stats.reqs).toFixed(1);
+            document.getElementById('m-amat').innerText = amat;
+        }
+
+        function resetSim() {
+            stats = { reqs: 0, cycles: 0, l1: 0, l2: 0, l3: 0, ram: 0 };
+            if(autoInterval) toggleAuto();
+            logUI.innerHTML = '';
+            packet.style.opacity = 0;
+            
+            Object.values(boxes).forEach(b => {
+                b.classList.remove('active-search', 'hit', 'miss');
+            });
+            
+            updateMetricsUI();
+            hLog("Hardware Reset. Cache flushed.", "log-sys");
+        }
+
+        function toggleAuto() {
+            if (autoInterval) {
+                clearInterval(autoInterval);
+                autoInterval = null;
+                btnAuto.innerText = "▶ Auto Simulate Traffic";
+                btnAuto.style.background = "#10b981";
+                btnReq.disabled = false;
+            } else {
+                autoInterval = setInterval(() => {
+                    if(!isAnimating) requestData();
+                }, 1500); 
+                btnAuto.innerText = "⏸ Pause Simulation";
+                btnAuto.style.background = "#f59e0b";
+                btnReq.disabled = true;
+            }
+        }
+
+        function getBoxCenterY(boxEl) {
+            // Calculate relative Y position within the hierarchy container
+            const containerRect = document.getElementById('hier-cont').getBoundingClientRect();
+            const boxRect = boxEl.getBoundingClientRect();
+            return boxRect.top - containerRect.top + (boxRect.height / 2);
+        }
+
+        async function animateTo(level, type) {
+            let targetBox = boxes[level];
+            let yPos = getBoxCenterY(targetBox);
+            
+            // Move packet
+            packet.style.transform = `translate(-50%, ${yPos}px)`;
+            
+            // Highlight Box
+            targetBox.classList.add('active-search');
+            await sleep(300); // Wait for packet to arrive
+            
+            if (type === 'HIT') {
+                targetBox.classList.remove('active-search');
+                targetBox.classList.add('hit');
+                packet.classList.remove('req');
+                packet.classList.add('data'); // Turn green
+                await sleep(300);
+            } else if (type === 'MISS') {
+                targetBox.classList.remove('active-search');
+                targetBox.classList.add('miss');
+                await sleep(200);
+            }
+        }
+
+        async function requestData() {
+            if(isAnimating) return;
+            isAnimating = true;
+            btnReq.disabled = true;
+            
+            let addr = "0x" + Math.floor(Math.random()*16777215).toString(16).toUpperCase().padStart(6, '0');
+            hLog(`--- CPU Requesting Address: ${addr} ---`, "log-req");
+
+            stats.reqs++;
+            let cycleCost = 0;
+
+            // Reset visual states
+            Object.values(boxes).forEach(b => b.classList.remove('hit', 'miss', 'active-search'));
+            packet.className = 'packet req'; // Red packet at top
+            packet.style.transform = `translate(-50%, ${getBoxCenterY(boxes.CPU)}px)`;
+            await sleep(50); // Initial layout setup
+            
+            // Determine random outcome
+            let rand = Math.random();
+            let targetLevel = '';
+
+            if (rand < PROB.L1) targetLevel = 'L1';
+            else if (rand < PROB.L2) targetLevel = 'L2';
+            else if (rand < PROB.L3) targetLevel = 'L3';
+            else targetLevel = 'RAM';
+
+            // ANIMATION SEQUENCE
+            
+            // L1 Check
+            cycleCost += COST.L1;
+            if (targetLevel === 'L1') {
+                await animateTo('L1', 'HIT');
+                stats.l1++;
+                hLog(`L1 Cache: HIT (+${COST.L1} cycle)`, "log-hit");
+            } else {
+                await animateTo('L1', 'MISS');
+                hLog(`L1 Cache: MISS (+${COST.L1} cycle)`, "log-miss");
+                
+                // L2 Check
+                cycleCost += COST.L2;
+                if (targetLevel === 'L2') {
+                    await animateTo('L2', 'HIT');
+                    stats.l2++;
+                    hLog(`L2 Cache: HIT (+${COST.L2} cycles)`, "log-hit");
+                } else {
+                    await animateTo('L2', 'MISS');
+                    hLog(`L2 Cache: MISS (+${COST.L2} cycles)`, "log-miss");
+                    
+                    // L3 Check
+                    cycleCost += COST.L3;
+                    if (targetLevel === 'L3') {
+                        await animateTo('L3', 'HIT');
+                        stats.l3++;
+                        hLog(`L3 Cache: HIT (+${COST.L3} cycles)`, "log-hit");
+                    } else {
+                        await animateTo('L3', 'MISS');
+                        hLog(`L3 Cache: MISS (+${COST.L3} cycles)`, "log-miss");
+                        
+                        // RAM Check
+                        cycleCost += COST.RAM;
+                        hLog(`Traversing System Bus to Motherboard...`, "log-action");
+                        await animateTo('RAM', 'HIT'); // RAM is always a hit eventually
+                        stats.ram++;
+                        hLog(`Main Memory (RAM): FETCHED (+${COST.RAM} cycles)`, "log-warn");
+                    }
+                }
+            }
+
+            // Return Trip
+            hLog(`Total Cost: ${cycleCost} Cycles. Data returning to CPU.`, "log-sum");
+            stats.cycles += cycleCost;
+            updateMetricsUI();
+
+            // Animate packet flying back up to CPU
+            packet.style.transform = `translate(-50%, ${getBoxCenterY(boxes.CPU)}px)`;
+            await sleep(400);
+            
+            packet.style.opacity = 0; // Hide
+            
+            isAnimating = false;
+            if(!autoInterval) btnReq.disabled = false;
+        }
+
+        // Initialize UI
+        updateMetricsUI();
+    </script>
+</body>
+</html>

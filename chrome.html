@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | the capstone (chrome)</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1550px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid (STRICTLY VERTICAL) */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.2rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.9rem; margin: 0;}
+        .theory-card li { margin-bottom: 6px; }
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 15px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase; font-size: 0.85rem;
+        }
+        .ui-btn:hover:not(:disabled) { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-create { background: var(--hl-cyan); }
+        .btn-boot { background: #10b981; color: white;}
+        .reset-btn { background: #ef4444; color: var(--white); }
+
+        /* 3-COLUMN DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 340px 1fr 340px; gap: 20px; align-items: start;}
+        
+        /* LEFT COLUMN: OS KERNEL VIEW */
+        .os-kernel-view { display: flex; flex-direction: column; gap: 20px; }
+        
+        .pcb-table-container { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px; }
+        .module-header { font-weight: 900; font-size: 1.1rem; text-transform: uppercase; background: var(--text-dark); color: var(--white); padding: 5px 15px; text-align: center; border: 3px solid var(--text-dark); margin-bottom: 10px;}
+        
+        table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.75rem; }
+        th, td { border: 1px solid var(--text-dark); padding: 5px; text-align: left; }
+        th { background: #e2e8f0; font-family: var(--font-sans); text-transform: uppercase; font-weight: 900;}
+        tr.active-pcb { background: #dcfce7; animation: highlight 1s; }
+        tr.dead-pcb { background: #fecaca; opacity: 0.5; text-decoration: line-through;}
+
+        .ram-container { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px; position: relative;}
+        .ram-stats { display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: bold; margin-bottom: 10px; background: #f8fafc; padding: 5px; border: 2px solid var(--text-dark);}
+        
+        .ram-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; background: #cbd5e1; padding: 5px; border: 2px solid var(--text-dark);}
+        .ram-block { aspect-ratio: 1/1; background: var(--white); border: 1px solid rgba(0,0,0,0.1); }
+        .ram-block.used-system { background: #94a3b8; }
+        .ram-block.used-browser { background: #3b82f6; }
+        .ram-block.used-gpu { background: #8b5cf6; }
+        .ram-block.used-tab { background: #10b981; }
+
+        /* MIDDLE COLUMN: CHROME ARCHITECTURE VIEW */
+        .chrome-view { background: #f8fafc; border: 4px dashed var(--accent-purple); display: flex; flex-direction: column; position: relative; padding: 20px; min-height: 650px;}
+        
+        .top-tier { display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; position: relative; z-index: 10;}
+        
+        .process-box { border: 4px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); display: flex; flex-direction: column; align-items: center; padding: 10px; position: relative; transition: all 0.3s; background: var(--white);}
+        .process-box .p-title { font-weight: 900; font-size: 1rem; text-transform: uppercase; color: white; padding: 4px 10px; border: 2px solid var(--text-dark); margin-top: -25px; margin-bottom: 5px; background: var(--text-dark);}
+        .process-box .p-pid { font-family: var(--font-mono); font-size: 0.75rem; font-weight: bold; background: #e2e8f0; padding: 2px 6px; border: 1px solid var(--text-dark);}
+        
+        .browser-proc { width: 260px; border-color: #1d4ed8; }
+        .browser-proc .p-title { background: #3b82f6; border-color: #1e3a8a;}
+        
+        /* Legacy Mode - Shared Thread Container */
+        .thread-container { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 15px; width: 100%; border-top: 2px dashed var(--text-dark); padding-top: 10px;}
+        .thread-box { background: #bfdbfe; border: 2px dashed #1d4ed8; padding: 5px 10px; font-size: 0.8rem; font-weight: bold; font-family: var(--font-mono); animation: popIn 0.3s; text-align: center;}
+
+        /* Modern Mode - IPC & Renderers */
+        .ipc-bus-zone { width: 100%; height: 70px; position: relative; display: flex; justify-content: center; align-items: center; border-top: 4px dotted #fbbf24; border-bottom: 4px dotted #fbbf24; background: rgba(251, 191, 36, 0.1); margin-bottom: 30px;}
+        .ipc-label { position: absolute; font-weight: 900; color: #d97706; text-transform: uppercase; letter-spacing: 2px; opacity: 0.5;}
+        
+        .tabs-tier { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; position: relative; z-index: 10;}
+        .renderer-proc { width: 160px; border-color: #047857; animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); background: #ecfdf5;}
+        .renderer-proc .p-title { background: #10b981; border-color: #064e3b; font-size: 0.85rem;}
+        
+        .sandbox-badge { background: #fca5a5; color: #7f1d1d; font-size: 0.65rem; font-weight: 900; padding: 2px 4px; border: 2px solid #7f1d1d; margin-top: 8px; transform: rotate(-3deg);}
+
+        .tab-actions { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; width: 100%; justify-content: center; align-items: center;}
+        .t-btn { padding: 4px 6px; font-size: 0.7rem; font-weight: bold; border: 2px solid var(--text-dark); cursor: pointer; background: var(--white); width: 100%;}
+        .t-btn:hover { background: var(--hl-yellow); }
+        .t-btn.crash { background: #ef4444; color: white; }
+
+        .ipc-packet { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #ef4444; border: 2px solid white; box-shadow: 0 0 10px #ef4444; z-index: 50;}
+        .ipc-pipe-line { position: absolute; width: 4px; background: rgba(251, 191, 36, 0.5); z-index: 1;}
+
+        /* RIGHT COLUMN: OS TERMINAL */
+        .os-log-container { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); display: flex; flex-direction: column; height: 650px;}
+        .os-log { flex: 1; color: #38bdf8; font-family: var(--font-mono); padding: 15px; overflow-y: auto; font-size: 0.8rem; }
+        .os-log p { margin: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;}
+        .log-sys { color: #f43f5e; font-weight: bold; }
+        .log-action { color: #cbd5e1; }
+        .log-ipc { color: #fbbf24; font-weight: bold; }
+        .log-error { color: #ef4444; font-weight: bold; background: rgba(239,68,68,0.1); padding: 2px;}
+
+        /* Animations */
+        .crashing { animation: severeShake 0.4s ease-in-out infinite, redFlash 0.4s infinite !important; pointer-events: none;}
+        .zombie { opacity: 0.3; filter: grayscale(100%); transition: all 1s;}
+        .system-hang { animation: severeShake 0.5s ease-in-out infinite; border-color: #ef4444 !important; }
+
+        @keyframes highlight { 0% { background-color: var(--hl-yellow); } 100% { background-color: transparent; } }
+        @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes severeShake { 0%, 100% { transform: translateX(0) scale(1); } 25% { transform: translateX(-10px) rotate(-3deg); } 75% { transform: translateX(10px) rotate(3deg); } }
+        @keyframes redFlash { 0%, 100% { background-color: #ecfdf5; } 50% { background-color: #fecaca; border-color: #ef4444;} }
+        @keyframes packetMoveUp { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-160px); opacity: 0; } }
+        @keyframes packetMoveDown { 0% { transform: translateY(-160px); opacity: 1; } 100% { transform: translateY(0); opacity: 0; } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1> chrome architecture</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. The OS PCB (Process Control Block)</h3>
+                    <p class="definition">The OS tracks every running program using a unique data structure called a PCB.</p>
+                    <ul>
+                        <li>Every time a true <strong>Process</strong> starts, the OS creates a new PCB row, assigns a unique PID, and allocates physical RAM blocks.</li>
+                        <li><strong>Threads</strong> do not get unique PCBs or memory. They live <em>inside</em> an existing process and share its RAM.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. Legacy Browsers (Tabs = Threads)</h3>
+                    <p class="definition">Old browsers ran the entire application as a single OS Process.</p>
+                    <ul>
+                        <li>Every tab you opened was just a <strong>Thread</strong> inside that one Process. Therefore, they shared the exact same memory heap.</li>
+                        <li><strong>The Fatal Flaw:</strong> If Tab 2 encounters a bug (Segfault), it corrupts the shared memory. The OS kills the entire Process, taking the whole browser down with it.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. Modern Chrome (Tabs = Processes)</h3>
+                    <p class="definition">Chrome acts like a "Mini-OS" by using isolated processes.</p>
+                    <ul>
+                        <li><strong>Browser Process:</strong> The manager. It handles UI, Network, and Disk.</li>
+                        <li><strong>Renderer Processes:</strong> Every single tab requests a brand new, isolated OS Process with its own unique PCB and RAM.</li>
+                        <li>If a tab crashes, the OS only kills that specific PCB. The rest of the browser survives!</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>4. Inter-Process Communication (IPC)</h3>
+                    <p class="definition">If tabs are isolated in sandboxes, how do they load websites?</p>
+                    <ul>
+                        <li>Because Renderers are sandboxed, they are strictly forbidden from touching the OS Network card.</li>
+                        <li>They must shoot a serialized message across an <strong>IPC Pipe</strong> to the main Browser Process. The Browser Process makes the secure OS Syscall and hands the data back down the pipe.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <strong style="text-transform: uppercase; color: var(--accent-purple);">Architecture Mode:</strong>
+                <button class="ui-btn active mode-btn" onclick="setMode('CHROME', this)">Modern Chrome (Multi-Process)</button>
+                <button class="ui-btn mode-btn" onclick="setMode('OLD', this)">Legacy Browser (Single-Process)</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn btn-boot" onclick="bootBrowser()" id="btn-boot">🚀 Boot Browser</button>
+                <button class="ui-btn btn-create" onclick="openTab()" id="btn-new-tab" disabled>+ Open New Tab (Costs RAM)</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn reset-btn" onclick="hardReset()">🛑 Hard Reboot OS</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="os-kernel-view">
+                
+                <div class="ram-container" id="ram-container-ui">
+                    <div class="module-header" style="background: #166534;">Physical RAM</div>
+                    <div class="ram-stats">
+                        <span>Total: 100</span>
+                        <span style="color:#ef4444;">Used: <span id="ram-used">0</span></span>
+                        <span style="color:#10b981;">Free: <span id="ram-free">100</span></span>
+                    </div>
+                    <div style="font-size:0.75rem; font-weight:bold; margin-bottom:5px; display:flex; gap:10px;">
+                        <span style="color:#3b82f6;">■ Browser</span>
+                        <span style="color:#10b981;">■ Tabs</span>
+                    </div>
+                    <div class="ram-grid" id="ram-grid">
+                        </div>
+                </div>
+
+                <div class="pcb-table-container">
+                    <div class="module-header">OS PCB Table</div>
+                    <table id="pcb-table">
+                        <thead><tr><th>PID</th><th>Name</th><th>RAM</th><th>State</th></tr></thead>
+                        <tbody id="pcb-tbody">
+                            </tbody>
+                    </table>
+                </div>
+
+            </div>
+
+            <div class="chrome-view" id="chrome-view">
+                
+                <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#cbd5e1; font-weight:900; font-size:1.5rem; opacity:0.5; text-align:center;" id="chrome-offline-msg">
+                    BROWSER IS OFFLINE<br><span style="font-size:0.9rem;">Click "Boot Browser"</span>
+                </div>
+
+                <div class="top-tier" id="tier-top" style="display:none;">
+                    <div class="process-box browser-proc" id="proc-browser">
+                        <div class="p-title" id="browser-title-ui">Browser Process</div>
+                        <div class="p-pid" id="browser-pid-ui">PID: 1000</div>
+                        <div style="font-size:0.75rem; font-weight:bold; margin-top:5px;">[ OS Syscall Coordinator ]</div>
+                        
+                        <div class="thread-container" id="thread-container" style="display:none;"></div>
+                    </div>
+                </div>
+
+                <div class="ipc-bus-zone" id="tier-ipc" style="display:none;">
+                    <div class="ipc-label">OS IPC Bus / Mojo Pipes</div>
+                </div>
+
+                <div class="tabs-tier" id="tier-tabs">
+                    </div>
+
+            </div>
+
+            <div class="os-log-container">
+                <div class="module-header">OS Kernel Terminal</div>
+                <div class="os-log" id="os-log"></div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // --- SYSTEM ENGINE STATE ---
+        let mode = 'CHROME';
+        let isBooted = false;
+        let pidCounter = 2000; 
+        let tabCounter = 1;
+        let processes = []; 
+        let tabsList = []; 
+        
+        const TOTAL_RAM = 100;
+        let ramBlocks = Array(TOTAL_RAM).fill('free'); 
+        let isAnimating = false; 
+
+        const logUI = document.getElementById('os-log');
+        const pcbTbody = document.getElementById('pcb-tbody');
+        const ramGridUI = document.getElementById('ram-grid');
+        const ramUsedUI = document.getElementById('ram-used');
+        const ramFreeUI = document.getElementById('ram-free');
+        const ramContainerUI = document.getElementById('ram-container-ui');
+        
+        const tierTop = document.getElementById('tier-top');
+        const tierIpc = document.getElementById('tier-ipc');
+        const tierTabs = document.getElementById('tier-tabs');
+        const threadContainer = document.getElementById('thread-container');
+        
+        const btnBoot = document.getElementById('btn-boot');
+        const btnNewTab = document.getElementById('btn-new-tab');
+
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        // --- OS KERNEL FUNCTIONS ---
+
+        function osLog(msg, type = "log-action") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerText = `> ${msg}`;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight; 
+        }
+
+        function setMode(newMode, btnElement) {
+            mode = newMode;
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            btnElement.classList.add('active');
+            hardReset(); // Clean reset without reloading the page
+        }
+
+        function hardReset() {
+            isBooted = false;
+            pidCounter = 2000;
+            tabCounter = 1;
+            processes = [];
+            tabsList = [];
+            isAnimating = false;
+            
+            for(let i=0; i<TOTAL_RAM; i++) ramBlocks[i] = 'free';
+            
+            logUI.innerHTML = '';
+            pcbTbody.innerHTML = '';
+            tierTabs.innerHTML = '';
+            threadContainer.innerHTML = '';
+            
+            tierTop.style.display = 'none';
+            tierIpc.style.display = 'none';
+            document.getElementById('chrome-offline-msg').style.display = 'block';
+            
+            btnBoot.disabled = false;
+            btnNewTab.disabled = true;
+            
+            initRAM();
+            osLog(`System Hard Rebooted. Ready to boot in ${mode} mode.`, "log-warn");
+        }
+
+        function initRAM() {
+            for(let i=0; i<15; i++) ramBlocks[i] = 'used-system'; 
+            renderRAM();
+        }
+
+        function updateStats() {
+            let used = ramBlocks.filter(b => b !== 'free').length;
+            let free = TOTAL_RAM - used;
+            ramUsedUI.innerText = used;
+            ramFreeUI.innerText = free;
+            return { used, free };
+        }
+
+        function allocateRAM(amount, ownerClass) {
+            let stats = updateStats();
+            if (amount > stats.free) return null; 
+
+            let allocated = [];
+            for(let i=0; i<TOTAL_RAM; i++) {
+                if (ramBlocks[i] === 'free') {
+                    ramBlocks[i] = ownerClass;
+                    allocated.push(i);
+                    if (allocated.length === amount) break;
+                }
+            }
+            renderRAM();
+            return allocated;
+        }
+
+        function freeRAM(blockList) {
+            blockList.forEach(b => ramBlocks[b] = 'free');
+            renderRAM();
+        }
+
+        function renderRAM() {
+            ramGridUI.innerHTML = '';
+            for(let i=0; i<TOTAL_RAM; i++) {
+                ramGridUI.innerHTML += `<div class="ram-block ${ramBlocks[i]}"></div>`;
+            }
+            updateStats();
+        }
+
+        function renderPCBs() {
+            pcbTbody.innerHTML = '';
+            processes.forEach(p => {
+                let trCls = p.state === 'ZOMBIE' ? 'dead-pcb' : '';
+                if (p.isNew) { trCls += ' active-pcb'; p.isNew = false; }
+                
+                pcbTbody.innerHTML += `
+                    <tr class="${trCls}">
+                        <td>${p.pid}</td>
+                        <td><strong>${p.name}</strong></td>
+                        <td>${p.blocks.length} blk</td>
+                        <td style="color:${p.state==='RUNNING'?'#10b981':'#ef4444'}; font-weight:bold;">${p.state}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        function createProcess(name, ppid, ramNeeded, ramClass, pidOverride=null) {
+            let blocks = allocateRAM(ramNeeded, ramClass);
+            if (!blocks) {
+                osLog(`[KERNEL PANIC] Out of Memory! System cannot allocate ${ramNeeded} blocks for ${name}.`, "log-error");
+                ramContainerUI.classList.add('system-hang');
+                setTimeout(() => ramContainerUI.classList.remove('system-hang'), 1500);
+                return null;
+            }
+            
+            let pid = pidOverride || pidCounter++;
+            let pcb = { pid, ppid, name, state: 'RUNNING', blocks, isNew: true };
+            
+            processes.push(pcb);
+            renderPCBs();
+            return pcb;
+        }
+
+        // --- BROWSER ENGINE FUNCTIONS ---
+
+        async function bootBrowser() {
+            if (isBooted) return;
+            btnBoot.disabled = true;
+            document.getElementById('chrome-offline-msg').style.display = 'none';
+            
+            osLog(`User executed browser.exe.`, "log-sys");
+            await sleep(800);
+
+            if (mode === 'CHROME') {
+                let browserPCB = createProcess("Chrome_Browser", 1, 15, "used-browser", 1000);
+                osLog(`Allocated Browser Process PCB (PID 1000) and 15 RAM Blocks.`, "log-action");
+                document.getElementById('browser-title-ui').innerText = "Main Browser Process";
+                document.getElementById('browser-title-ui').style.background = "#3b82f6";
+                document.getElementById('proc-browser').style.borderColor = "#1d4ed8";
+                threadContainer.style.display = 'none';
+                tierIpc.style.display = 'flex';
+            } else {
+                let legacyPCB = createProcess("Legacy_Browser", 1, 15, "used-browser", 1000);
+                osLog(`Allocated Single OS Process PCB (PID 1000) and 15 RAM Blocks.`, "log-action");
+                document.getElementById('browser-title-ui').innerText = "Monolithic Browser Process";
+                document.getElementById('browser-title-ui').style.background = "#ef4444";
+                document.getElementById('proc-browser').style.borderColor = "#7f1d1d";
+                threadContainer.style.display = 'flex';
+                tierIpc.style.display = 'none';
+            }
+            
+            tierTop.style.display = 'flex';
+            await sleep(800);
+            
+            isBooted = true;
+            btnNewTab.disabled = false;
+            
+            // Instantly open the first tab to show the architecture
+            await openTab();
+        }
+
+        async function openTab() {
+            if (!isBooted || isAnimating) return;
+            isAnimating = true;
+            btnNewTab.disabled = true;
+
+            let currentTabId = tabCounter++;
+            tabsList.push(currentTabId);
+
+            if (mode === 'CHROME') {
+                osLog(`Browser Process requests OS syscall to fork() new environment.`, "log-action");
+                await sleep(600);
+
+                let pcb = createProcess(`Renderer_Tab${currentTabId}`, 1000, 14, "used-tab");
+                if (!pcb) {
+                    isAnimating = false; btnNewTab.disabled = false; return;
+                }
+
+                osLog(`OS Created UNIQUE PCB for Renderer Process (PID ${pcb.pid}).`, "log-action");
+                await sleep(600);
+
+                let tabHtml = `
+                    <div class="process-box renderer-proc" id="proc-${pcb.pid}">
+                        <div class="p-title">Tab ${currentTabId}</div>
+                        <div class="p-pid">PID: ${pcb.pid}</div>
+                        <div class="sandbox-badge">🚨 OS SANDBOX</div>
+                        <div class="tab-actions">
+                            <button class="t-btn" onclick="sendIPC(${pcb.pid})">Network IPC</button>
+                            <button class="t-btn crash" onclick="crashTab(${pcb.pid})">Crash</button>
+                        </div>
+                        <div class="ipc-pipe-line" style="height: 40px; top: -40px; left: 50%; transform: translateX(-50%);"></div>
+                    </div>
+                `;
+                tierTabs.insertAdjacentHTML('beforeend', tabHtml);
+                osLog(`Established IPC Pipe connecting PID ${pcb.pid} to PID 1000.`, "log-sys");
+
+            } else {
+                osLog(`Legacy Browser spawning Thread for Tab ${currentTabId}.`, "log-action");
+                await sleep(600);
+
+                // Thread shares the parent's memory, allocate minimal for thread stack
+                let blocks = allocateRAM(4, "used-browser");
+                if(!blocks) {
+                    osLog(`[KERNEL PANIC] Out of Memory!`, "log-error");
+                    ramContainerUI.classList.add('system-hang');
+                    setTimeout(() => ramContainerUI.classList.remove('system-hang'), 1500);
+                    isAnimating = false; btnNewTab.disabled = false; return;
+                }
+                
+                // Add blocks to the single main PCB
+                processes[0].blocks.push(...blocks);
+                renderPCBs();
+
+                osLog(`Thread created. NO new PCB assigned. Sharing PID 1000 RAM.`, "log-action");
+
+                let tHtml = `
+                    <div class="thread-box" id="thread-${currentTabId}">
+                        <div>Tab ${currentTabId} <span style="font-size:0.7rem;">(Thread)</span></div>
+                        <button class="t-btn crash" style="margin-top:5px; width:100%;" onclick="crashLegacy(${currentTabId})">Crash Thread</button>
+                    </div>
+                `;
+                threadContainer.insertAdjacentHTML('beforeend', tHtml);
+            }
+            
+            isAnimating = false;
+            btnNewTab.disabled = false;
+        }
+
+        // --- IPC ANIMATION (CHROME ONLY) ---
+
+        async function sendIPC(pid) {
+            if(isAnimating) return;
+            isAnimating = true;
+            
+            let procDiv = document.getElementById(`proc-${pid}`);
+            if(!procDiv) return;
+
+            osLog(`--- IPC TRANSACTION (PID ${pid}) ---`, "log-ipc");
+            
+            // 1. Packet Up
+            let packet = document.createElement('div');
+            packet.className = 'ipc-packet';
+            packet.style.top = '-15px';
+            packet.style.left = '50%';
+            packet.style.transform = 'translateX(-50%)';
+            packet.style.animation = 'packetMoveUp 1s cubic-bezier(0.4, 0, 0.2, 1) forwards';
+            procDiv.appendChild(packet);
+            
+            osLog(`Renderer ${pid} sending serialized IPC message requesting Network.`, "log-action");
+            await sleep(1000);
+            packet.remove();
+
+            // 2. Browser Processing
+            document.getElementById('proc-browser').style.backgroundColor = '#dbeafe';
+            osLog(`Browser Process (PID 1000) validating permissions. Making secure Syscall.`, "log-action");
+            await sleep(800);
+            document.getElementById('proc-browser').style.backgroundColor = 'var(--white)';
+            osLog(`OS returns Data to Browser Process.`, "log-action");
+
+            // 3. Packet Down
+            let packetDown = document.createElement('div');
+            packetDown.className = 'ipc-packet';
+            packetDown.style.background = '#10b981'; // green
+            packetDown.style.boxShadow = '0 0 10px #10b981';
+            packetDown.style.top = '-15px';
+            packetDown.style.left = '50%';
+            packetDown.style.transform = 'translateX(-50%)';
+            packetDown.style.animation = 'packetMoveDown 1s cubic-bezier(0.4, 0, 0.2, 1) forwards';
+            procDiv.appendChild(packetDown);
+
+            osLog(`Browser sending raw data down IPC pipe back to Renderer.`, "log-action");
+            await sleep(1000);
+            packetDown.remove();
+            
+            osLog(`Renderer ${pid} received data safely.`, "log-ipc");
+            isAnimating = false;
+        }
+
+        // --- THE CRASHES ---
+
+        async function crashTab(pid) {
+            if(isAnimating) return;
+            isAnimating = true;
+
+            let pcbIdx = processes.findIndex(p => p.pid === pid);
+            if(pcbIdx === -1) return;
+            let pcb = processes[pcbIdx];
+
+            let procDiv = document.getElementById(`proc-${pid}`);
+
+            osLog(`--- FATAL ERROR DETECTED ---`, "log-error");
+            osLog(`Renderer ${pid} attempted illegal memory access (Segfault).`, "log-error");
+            
+            procDiv.classList.add('crashing');
+            await sleep(1500);
+
+            osLog(`Hardware Trap fired. OS forcibly terminating PID ${pid}.`, "log-sys");
+            pcb.state = 'ZOMBIE';
+            renderPCBs();
+            await sleep(800);
+
+            osLog(`OS Reclaiming ${pcb.blocks.length} RAM Blocks.`, "log-sys");
+            freeRAM(pcb.blocks);
+            await sleep(800);
+
+            procDiv.classList.remove('crashing');
+            procDiv.classList.add('zombie');
+            procDiv.innerHTML = `<div style="font-weight:900; font-size:1.5rem; margin-top:20px;">💀<br><span style="font-size:0.8rem;">Aw, Snap!</span></div>`;
+            
+            osLog(`IPC Pipe severed. Browser Process (PID 1000) survived due to isolation.`, "log-success");
+
+            await sleep(2000);
+            procDiv.remove();
+            processes.splice(pcbIdx, 1);
+            renderPCBs();
+
+            isAnimating = false;
+        }
+
+        async function crashLegacy(tabId) {
+            if(isAnimating) return;
+            isAnimating = true;
+
+            osLog(`--- FATAL ERROR DETECTED ---`, "log-error");
+            osLog(`Thread for Tab ${tabId} attempted illegal memory access.`, "log-error");
+            
+            let threadDiv = document.getElementById(`thread-${tabId}`);
+            if(threadDiv) threadDiv.classList.add('crashing');
+            await sleep(1000);
+
+            osLog(`Because memory is SHARED, corruption spread to the entire Heap!`, "log-error");
+            let browserDiv = document.getElementById('proc-browser');
+            browserDiv.classList.add('crashing');
+            await sleep(1500);
+
+            osLog(`Hardware Trap fired. OS killing entire Monolithic Process (PID 1000).`, "log-sys");
+            processes[0].state = 'ZOMBIE';
+            renderPCBs();
+            
+            freeRAM(processes[0].blocks);
+            await sleep(800);
+
+            browserDiv.classList.remove('crashing');
+            browserDiv.classList.add('zombie');
+            
+            osLog(`ENTIRE BROWSER CRASHED. All tabs lost.`, "log-error");
+            btnNewTab.disabled = true;
+            // Leave it hanging so user has to reset
+        }
+
+        // Init
+        initRAM();
+    </script>
+</body>
+</html>

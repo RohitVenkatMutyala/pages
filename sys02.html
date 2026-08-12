@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-sys | load balancing algorithms</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+            
+            --c-client-a: #3b82f6; /* Blue */
+            --c-client-b: #f59e0b; /* Orange */
+            --c-client-c: #ec4899; /* Pink */
+            
+            --c-lb: #a855f7; 
+            --c-server: #10b981;
+            --c-danger: #ef4444;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1500px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards (Strictly Vertical) */
+        .theory-wrapper { margin-bottom: 20px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); padding: 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.2rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px; text-transform: uppercase;}
+        .theory-card .use-case { display: inline-block; background: #fef3c7; color: #b45309; font-weight: 900; font-size: 0.75rem; padding: 4px 8px; border: 2px solid #b45309; margin-bottom: 10px; text-transform: uppercase;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.9rem; margin: 0;}
+
+        /* Controls */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        
+        .ui-btn { 
+            background: var(--bg-color); border: 3px solid var(--text-dark); padding: 8px 15px; font-weight: 900; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 4px 4px 0 var(--text-dark); transition: all 0.1s; font-size: 0.85rem;
+        }
+        .ui-btn:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-a { border-color: var(--c-client-a); color: var(--c-client-a); }
+        .btn-b { border-color: var(--c-client-b); color: var(--c-client-b); }
+        .btn-c { border-color: var(--c-client-c); color: var(--c-client-c); }
+        .btn-spike { background: var(--c-danger); color: white; text-transform: uppercase;}
+        .btn-scale { background: var(--c-server); color: white; text-transform: uppercase;}
+        
+        .algo-select { font-family: var(--font-mono); font-size: 1rem; font-weight: bold; border: 3px solid var(--text-dark); padding: 7px; background: var(--white);}
+
+        /* DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; align-items: start;}
+        
+        /* LEFT: NETWORK TOPOLOGY */
+        .network-container { background: #fdfcfa; border: 4px dashed var(--accent-purple); padding: 20px; height: 550px; position: relative; overflow: hidden;}
+        .zone-label { position: absolute; top: 10px; left: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 2px;}
+
+        .node { border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); position: absolute; display: flex; flex-direction: column; justify-content: center; align-items: center; background: var(--white); z-index: 10; transition: transform 0.2s;}
+        .node-icon { font-size: 2.2rem; margin-bottom: 5px; }
+        .node-label { font-weight: 900; text-transform: uppercase; font-size: 0.7rem; text-align: center; padding: 0 5px;}
+        .node-sub { font-family: var(--font-mono); font-size: 0.6rem; font-weight: bold; margin-top: 3px;}
+        
+        /* Clients */
+        .client-col { position: absolute; left: 5%; top: 10%; bottom: 10%; display: flex; flex-direction: column; justify-content: space-around;}
+        .client-node { width: 100px; height: 90px; border: 4px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); display: flex; flex-direction: column; justify-content: center; align-items: center; background: white; z-index: 10;}
+        
+        #client-a { border-color: var(--c-client-a); }
+        #client-b { border-color: var(--c-client-b); }
+        #client-c { border-color: var(--c-client-c); }
+
+        /* LB Node */
+        #node-lb { width: 130px; height: 130px; top: 50%; left: 35%; transform: translateY(-50%); border-color: var(--c-lb); background: #faf5ff;}
+        
+        /* Server Pool Container */
+        .server-pool { position: absolute; right: 5%; top: 5%; bottom: 5%; width: 220px; display: flex; flex-direction: column; justify-content: space-around; align-items: center;}
+        
+        /* Individual Server Node */
+        .server-node { width: 100%; height: 70px; border: 4px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); background: var(--white); position: relative; display: flex; flex-direction: column; padding: 8px; box-sizing: border-box; transition: all 0.2s;}
+        .server-node.active { border-color: var(--c-server); background: #f0fdf4;}
+        .server-node.overload { border-color: var(--c-danger); background: #fef2f2; animation: shake 0.4s infinite;}
+        .server-node.dead { border-color: #475569; background: #e2e8f0; opacity: 0.7;}
+        .server-node.highlight { box-shadow: 0 0 20px var(--hl-yellow); transform: scale(1.05); z-index: 15;}
+        
+        .srv-header { display: flex; justify-content: space-between; font-weight: 900; font-size: 0.8rem; text-transform: uppercase; margin-bottom: 5px;}
+        
+        /* Load Bar */
+        .load-bar-bg { width: 100%; height: 12px; background: #e2e8f0; border: 2px solid var(--text-dark); margin-top: auto;}
+        .load-bar-fill { height: 100%; width: 0%; background: var(--c-server); transition: width 0.2s, background-color 0.2s;}
+
+        /* The Animated Packet */
+        .packet { 
+            position: absolute; width: 18px; height: 18px; border-radius: 50%;
+            border: 3px solid var(--white); background: var(--text-dark);
+            z-index: 20; transform: translate(-50%, -50%); opacity: 0; 
+            box-shadow: 2px 2px 0 rgba(0,0,0,0.5); pointer-events: none;
+        }
+        .pkt-a { background: var(--c-client-a); }
+        .pkt-b { background: var(--c-client-b); }
+        .pkt-c { background: var(--c-client-c); }
+
+        /* RIGHT: METRICS & LOGS */
+        .metrics-panel { display: flex; flex-direction: column; gap: 15px; }
+        
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .stat-box { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); padding: 15px; text-align: center; color: white;}
+        .stat-val { font-size: 2.5rem; font-weight: 900; color: var(--white); line-height: 1; font-family: var(--font-mono);}
+        .stat-sub { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-top: 5px;}
+        
+        #val-dropped { color: var(--c-danger); }
+        #val-handled { color: var(--c-server); }
+
+        .os-log-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); flex: 1; display: flex; flex-direction: column; height: 400px;}
+        .log-header { font-weight: 900; font-size: 0.9rem; text-transform: uppercase; padding: 10px; border-bottom: 3px solid var(--text-dark); background: #f8fafc;}
+        .os-log { font-family: var(--font-mono); font-size: 0.75rem; overflow-y: auto; padding: 15px; flex: 1; background: #0f172a; color: #cbd5e1; line-height: 1.4;}
+        .os-log p { margin: 4px 0; border-bottom: 1px dashed #334155; padding-bottom: 4px;}
+        
+        .log-info { color: #60a5fa; }
+        .log-lb { color: #c084fc; font-weight: bold;}
+        .log-warn { color: var(--hl-yellow); font-weight: bold;}
+        .log-err { color: var(--c-danger); font-weight: bold;}
+        .log-highlight { color: #fbbf24; font-weight: bold; font-style: italic;}
+
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to system hub</a>
+        <h1>sys 02: load balancing algorithms</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                
+                <div class="theory-card">
+                    <h3>1. Round Robin</h3>
+                    <div class="use-case">When to use: Simple clusters where all servers have identical hardware.</div>
+                    <p class="definition">The Load Balancer acts like a card dealer, distributing requests sequentially.</p>
+                    <ul>
+                        <li><strong>How it works:</strong> Request 1 goes to Server 1, Request 2 to Server 2, Request 3 to Server 3, and then it loops back to Server 1.</li>
+                        <li><strong>The Flaw:</strong> It assumes all requests take the same amount of time. If Server 1 gets a heavy video-processing request, and Server 2 gets a tiny text request, Round Robin will still blindly send the next request to Server 1, potentially overloading it.</li>
+                    </ul>
+                </div>
+
+                <div class="theory-card">
+                    <h3>2. Least Connections</h3>
+                    <div class="use-case">When to use: Heavy applications where requests take a long, variable amount of time.</div>
+                    <p class="definition">The Load Balancer actively monitors the real-time queue length of every server.</p>
+                    <ul>
+                        <li><strong>How it works:</strong> Before routing a packet, the LB scans all servers. It finds the server currently processing the fewest number of active connections and routes the new packet there.</li>
+                        <li><strong>The Benefit:</strong> It perfectly balances the load, naturally avoiding servers that are bogged down with heavy computations.</li>
+                    </ul>
+                </div>
+
+                <div class="theory-card">
+                    <h3>3. IP Hashing (Sticky Sessions)</h3>
+                    <div class="use-case">When to use: Stateful applications (e.g., E-commerce shopping carts).</div>
+                    <p class="definition">A mathematical guarantee that a user will always return to the same server.</p>
+                    <ul>
+                        <li><strong>How it works:</strong> The LB takes the Client's IP address (e.g., `192.168.1.5`) and runs it through a hash function (like Modulo math). The result determines the server.</li>
+                        <li><strong>The Benefit:</strong> Client A will <em>always</em> be routed to Server 1. Client B will <em>always</em> be routed to Server 2. If Server 1 holds Client A's un-saved shopping cart data in RAM, this ensures they don't suddenly hit Server 2 and find an empty cart.</li>
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <strong style="color: var(--accent-purple);">FIRE REQUESTS:</strong>
+                <button class="ui-btn btn-a" onclick="fireRequest('A')">Client A</button>
+                <button class="ui-btn btn-b" onclick="fireRequest('B')">Client B</button>
+                <button class="ui-btn btn-c" onclick="fireRequest('C')">Client C</button>
+                <button class="ui-btn btn-spike" onclick="fireSpike()">⚠️ Spike Traffic</button>
+            </div>
+            <div class="control-group">
+                <strong style="color: var(--accent-purple);">ALGORITHM:</strong>
+                <select id="algo-select" class="algo-select" onchange="changeAlgo()">
+                    <option value="round-robin">1. Round Robin</option>
+                    <option value="least-conn">2. Least Connections</option>
+                    <option value="ip-hash">3. IP Hashing (Sticky)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <strong style="color: var(--accent-purple);">CLUSTER:</strong>
+                <button class="ui-btn btn-scale" onclick="addServer()">+ Add Server</button>
+                <button class="ui-btn" onclick="removeServer()">- Remove Server</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="network-container" id="net-map">
+                <div class="zone-label">Network Topology</div>
+                
+                <div class="client-col">
+                    <div class="client-node" id="client-A">
+                        <div class="node-icon">💻</div>
+                        <div class="node-label">Client A</div>
+                        <div class="node-sub" style="color:var(--c-client-a)">IP: .101</div>
+                    </div>
+                    <div class="client-node" id="client-B">
+                        <div class="node-icon">📱</div>
+                        <div class="node-label">Client B</div>
+                        <div class="node-sub" style="color:var(--c-client-b)">IP: .202</div>
+                    </div>
+                    <div class="client-node" id="client-C">
+                        <div class="node-icon">🖥️</div>
+                        <div class="node-label">Client C</div>
+                        <div class="node-sub" style="color:var(--c-client-c)">IP: .303</div>
+                    </div>
+                </div>
+
+                <div class="node" id="node-lb">
+                    <div class="node-icon">⚖️</div>
+                    <div class="node-label">Load Balancer</div>
+                    <div class="node-sub" id="lb-status" style="color: var(--c-lb);">Round Robin</div>
+                </div>
+
+                <div class="server-pool" id="server-pool">
+                    </div>
+            </div>
+
+            <div class="metrics-panel">
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <div class="stat-val" id="val-handled">0</div>
+                        <div class="stat-sub">Requests Handled</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-val" id="val-dropped">0</div>
+                        <div class="stat-sub">Requests Dropped</div>
+                    </div>
+                </div>
+
+                <div class="os-log-box">
+                    <div class="log-header">Load Balancer Routing Log</div>
+                    <div class="os-log" id="os-log">
+                        <p style="color:#64748b;">[Load Balancer Online. Algorithm: Round Robin]</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- STATE ---
+        const MAX_CAPACITY = 15; 
+        const DECAY_RATE = 1000; 
+        
+        let servers = [];
+        let serverCounter = 1;
+        let rrIndex = 0;
+        
+        let stats = { handled: 0, dropped: 0 };
+        let processingInterval;
+        let isAnimating = false;
+
+        const clientData = {
+            'A': { id: 'A', ip: 101, el: document.getElementById('client-A'), cls: 'pkt-a' },
+            'B': { id: 'B', ip: 202, el: document.getElementById('client-B'), cls: 'pkt-b' },
+            'C': { id: 'C', ip: 303, el: document.getElementById('client-C'), cls: 'pkt-c' }
+        };
+
+        // --- DOM ELEMENTS ---
+        const poolUI = document.getElementById('server-pool');
+        const logUI = document.getElementById('os-log');
+        const mapUI = document.getElementById('net-map');
+        const algoSelect = document.getElementById('algo-select');
+        const nodeLB = document.getElementById('node-lb');
+        const lbStatus = document.getElementById('lb-status');
+
+        // --- CORE FUNCTIONS ---
+        function addLog(msg, type="log-info") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerHTML = msg;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight;
+        }
+
+        function updateMetrics() {
+            document.getElementById('val-handled').innerText = stats.handled;
+            document.getElementById('val-dropped').innerText = stats.dropped;
+        }
+
+        function changeAlgo() {
+            const algoText = algoSelect.options[algoSelect.selectedIndex].text;
+            lbStatus.innerText = algoText.split('.')[1].trim();
+            addLog(`--- LB Algorithm swapped to: ${algoText.toUpperCase()} ---`, 'log-highlight');
+            rrIndex = 0; // Reset round robin
+        }
+
+        // --- SERVER MANAGEMENT ---
+        function createServerDOM(srv) {
+            const div = document.createElement('div');
+            div.className = `server-node active`;
+            div.id = `srv-${srv.id}`;
+            div.innerHTML = `
+                <div class="srv-header">
+                    <span>Server ${srv.id}</span>
+                    <span id="srv-txt-${srv.id}">0 / ${MAX_CAPACITY}</span>
+                </div>
+                <div class="load-bar-bg">
+                    <div class="load-bar-fill" id="srv-bar-${srv.id}"></div>
+                </div>
+            `;
+            return div;
+        }
+
+        function addServer() {
+            if(servers.length >= 6) {
+                addLog("Maximum cluster size reached (6 servers).", "log-warn");
+                return;
+            }
+            const srv = { id: serverCounter++, load: 0, status: 'active' };
+            servers.push(srv);
+            poolUI.appendChild(createServerDOM(srv));
+            addLog(`[INFRA] Provisioned new backend Server ${srv.id}`, "log-info");
+        }
+
+        function removeServer() {
+            if(servers.length <= 1) {
+                addLog("Cannot remove last remaining server!", "log-warn");
+                return;
+            }
+            const srv = servers.pop(); 
+            const el = document.getElementById(`srv-${srv.id}`);
+            if(el) el.remove();
+            
+            if(rrIndex >= servers.length) rrIndex = 0;
+            addLog(`[INFRA] Decommissioned Server ${srv.id}`, "log-warn");
+        }
+
+        function updateServerUI() {
+            servers.forEach(srv => {
+                const el = document.getElementById(`srv-${srv.id}`);
+                const bar = document.getElementById(`srv-bar-${srv.id}`);
+                const txt = document.getElementById(`srv-txt-${srv.id}`);
+                if(!el) return;
+
+                txt.innerText = `${srv.load} / ${MAX_CAPACITY}`;
+                let pct = (srv.load / MAX_CAPACITY) * 100;
+                bar.style.width = `${Math.min(pct, 100)}%`;
+
+                if (srv.status === 'dead') {
+                    el.className = 'server-node dead';
+                    txt.innerText = "CRASHED";
+                    bar.style.backgroundColor = '#475569';
+                } else if (pct >= 100) {
+                    srv.status = 'dead'; 
+                    el.className = 'server-node dead';
+                    addLog(`[ALERT] Server ${srv.id} hit 100% capacity and CRASHED!`, "log-err");
+                    txt.innerText = "CRASHED";
+                    
+                    // Auto-restart
+                    setTimeout(() => {
+                        srv.load = 0;
+                        srv.status = 'active';
+                        addLog(`[INFRA] Server ${srv.id} auto-rebooted.`, "log-info");
+                        updateServerUI();
+                    }, 5000);
+                } else if (pct >= 80) {
+                    el.className = 'server-node overload';
+                    bar.style.backgroundColor = '#ef4444';
+                } else {
+                    el.className = 'server-node active';
+                    bar.style.backgroundColor = 'var(--c-server)';
+                }
+            });
+        }
+
+        function processQueue() {
+            servers.forEach(srv => {
+                if(srv.status === 'active' && srv.load > 0) {
+                    srv.load--;
+                    stats.handled++;
+                }
+            });
+            updateServerUI();
+            updateMetrics();
+        }
+
+        // --- TRAFFIC ROUTING (THE ALGORITHMS) ---
+        function getTargetServer(clientObj) {
+            const algo = algoSelect.value;
+            const activeServers = servers.filter(s => s.status === 'active');
+            
+            if(activeServers.length === 0) return { server: null, reason: "No active servers" };
+
+            if (algo === 'round-robin') {
+                let startIdx = rrIndex;
+                do {
+                    let srv = servers[rrIndex];
+                    let chosenIdx = rrIndex;
+                    rrIndex = (rrIndex + 1) % servers.length;
+                    if(srv.status === 'active') {
+                        return { server: srv, reason: `Sequential logic selects index ${chosenIdx}` };
+                    }
+                } while (rrIndex !== startIdx);
+                return { server: null, reason: "All servers dead" };
+            } 
+            else if (algo === 'least-conn') {
+                let minSrv = activeServers.reduce((min, srv) => srv.load < min.load ? srv : min, activeServers[0]);
+                return { server: minSrv, reason: `Queue analysis shows lowest load (${minSrv.load})` };
+            } 
+            else if (algo === 'ip-hash') {
+                // Hash formula: IP modulo number of active servers
+                let hashIndex = clientObj.ip % activeServers.length;
+                let srv = activeServers[hashIndex];
+                return { server: srv, reason: `Math: IP ${clientObj.ip} % ${activeServers.length} Servers = Index ${hashIndex}` };
+            }
+        }
+
+        async function fireRequest(clientId, isSpike = false) {
+            const client = clientData[clientId];
+            
+            // 1. Animate to LB
+            animatePacketUI(client.el, nodeLB, 300, client.cls);
+            if(!isSpike) await new Promise(r => setTimeout(r, 300));
+            
+            // 2. Routing Decision
+            const result = getTargetServer(client);
+            const target = result.server;
+            
+            if (!target) {
+                stats.dropped++;
+                addLog(`[LB] Client ${clientId} dropped. Reason: ${result.reason}.`, "log-err");
+                updateMetrics();
+            } else {
+                target.load++;
+                if(!isSpike) {
+                    addLog(`[LB] Client ${clientId} ➔ Server ${target.id}. <span style="color:#94a3b8; font-size:0.7rem;">(${result.reason})</span>`, "log-lb");
+                    
+                    // Highlight target server briefly to show algorithm logic
+                    const srvEl = document.getElementById(`srv-${target.id}`);
+                    srvEl.classList.add('highlight');
+                    setTimeout(() => srvEl.classList.remove('highlight'), 300);
+                }
+                
+                updateServerUI();
+                
+                // 3. Animate to Server
+                const srvEl = document.getElementById(`srv-${target.id}`);
+                setTimeout(() => { animatePacketUI(nodeLB, srvEl, 300, client.cls); }, isSpike ? 0 : 100);
+            }
+        }
+
+        async function fireSpike() {
+            addLog("⚠️ TRAFFIC SPIKE DETECTED! Deploying 30 concurrent requests.", "log-err");
+            const ids = ['A', 'B', 'C'];
+            for(let i=0; i<30; i++) {
+                let randClient = ids[Math.floor(Math.random() * ids.length)];
+                fireRequest(randClient, true);
+                await new Promise(r => setTimeout(r, 80)); // Stagger slightly
+            }
+        }
+
+        // --- ANIMATION ENGINE ---
+        function getCenterCoords(element) {
+            if(!element) return {x:0, y:0};
+            const mapRect = mapUI.getBoundingClientRect();
+            const elRect = element.getBoundingClientRect();
+            return {
+                x: (elRect.left - mapRect.left) + (elRect.width / 2),
+                y: (elRect.top - mapRect.top) + (elRect.height / 2)
+            };
+        }
+
+        function animatePacketUI(fromEl, toEl, durationMs, pktClass) {
+            if(!fromEl || !toEl) return;
+            const start = getCenterCoords(fromEl);
+            const end = getCenterCoords(toEl);
+
+            const pkt = document.createElement('div');
+            pkt.className = `packet ${pktClass}`;
+            mapUI.appendChild(pkt);
+
+            pkt.style.left = `${start.x}px`;
+            pkt.style.top = `${start.y}px`;
+            pkt.style.opacity = '1';
+            
+            void pkt.offsetWidth; // Force reflow
+
+            pkt.style.transition = `all ${durationMs}ms linear`;
+            pkt.style.left = `${end.x}px`;
+            pkt.style.top = `${end.y}px`;
+
+            setTimeout(() => {
+                pkt.remove();
+            }, durationMs);
+        }
+
+        // --- INIT ---
+        addServer();
+        addServer();
+        addServer();
+        
+        processingInterval = setInterval(processQueue, DECAY_RATE);
+        changeAlgo(); // Init status text
+
+    </script>
+</body>
+</html>

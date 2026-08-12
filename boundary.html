@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | the boundary</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+            --user-green: #10b981; --kernel-red: #ef4444;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1500px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid (STRICTLY VERTICAL) */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.2rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.9rem; margin: 0;}
+        .theory-card li { margin-bottom: 6px; }
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 12px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase; font-size: 0.8rem;
+        }
+        .ui-btn:hover:not(:disabled) { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        .reset-btn { background: var(--text-dark); color: var(--white); }
+
+        /* 3-COLUMN DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 320px 1fr 340px; gap: 20px; align-items: start;}
+        
+        /* LEFT COLUMN: CPU & REGISTERS */
+        .cpu-view { display: flex; flex-direction: column; gap: 20px; }
+        .module-header { font-weight: 900; font-size: 1.1rem; text-transform: uppercase; background: var(--text-dark); color: var(--white); padding: 5px 15px; text-align: center; border: 3px solid var(--text-dark); margin-bottom: 10px;}
+        
+        .cpu-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px; text-align: center; transition: all 0.3s;}
+        .mode-bit-display { font-size: 4rem; font-weight: 900; font-family: var(--font-mono); margin: 5px 0; color: var(--user-green); transition: color 0.3s;}
+        .mode-label { font-size: 1.2rem; font-weight: bold; text-transform: uppercase; color: var(--user-green); }
+        
+        .hardware-registers { text-align: left; font-family: var(--font-mono); font-size: 0.85rem; background: #f8fafc; border: 2px solid var(--text-dark); padding: 10px; margin-top: 15px;}
+        .reg-line { display: flex; justify-content: space-between; border-bottom: 1px dashed #cbd5e1; padding: 4px 0;}
+        .reg-val { font-weight: bold; color: var(--accent-purple); transition: all 0.2s;}
+        .reg-val.updated { background: var(--hl-yellow); color: var(--text-dark); }
+
+        /* The Visual Stacks */
+        .stacks-container { display: flex; gap: 10px; justify-content: space-between;}
+        .stack-col { flex: 1; border: 3px solid var(--text-dark); background: #f1f5f9; display: flex; flex-direction: column; justify-content: flex-end; height: 180px; padding: 5px; position: relative;}
+        .stack-title { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: var(--text-dark); color: white; font-size: 0.7rem; font-weight: bold; padding: 2px 6px; white-space: nowrap;}
+        .stack-frame { width: 100%; border: 2px solid var(--text-dark); font-family: var(--font-mono); font-size: 0.75rem; font-weight: bold; text-align: center; padding: 6px 0; margin-top: 4px; animation: popIn 0.2s ease-out;}
+        .sf-user { background: #dcfce7; border-color: var(--user-green); }
+        .sf-kernel { background: #fecaca; border-color: var(--kernel-red); }
+
+        /* MIDDLE COLUMN: MEMORY / CODE EXECUTION */
+        .sandbox-view { background: #fdfcfa; border: 4px dashed var(--accent-purple); display: flex; flex-direction: column; padding: 15px; min-height: 550px;}
+        
+        .space-zone { padding: 15px; border: 4px solid var(--text-dark); position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center;}
+        .space-label { position: absolute; top: -15px; left: 20px; color: white; font-weight: 900; padding: 4px 12px; text-transform: uppercase; border: 2px solid var(--text-dark);}
+        
+        /* User Space */
+        .user-space { background: #ecfdf5; border-color: var(--user-green); border-bottom: none;}
+        .user-space .space-label { background: var(--user-green); border-color: #064e3b; }
+        
+        /* Kernel Space */
+        .kernel-space { background: #fef2f2; border-color: var(--kernel-red); border-top: none;}
+        .kernel-space .space-label { background: var(--kernel-red); border-color: #7f1d1d; }
+
+        /* The Barrier */
+        .system-call-barrier { height: 35px; background: repeating-linear-gradient(45deg, #fbbf24, #fbbf24 10px, #f59e0b 10px, #f59e0b 20px); border-left: 4px solid var(--text-dark); border-right: 4px solid var(--text-dark); border-top: 4px solid var(--text-dark); border-bottom: 4px solid var(--text-dark); display: flex; justify-content: center; align-items: center; color: var(--text-dark); font-weight: 900; font-size: 0.9rem; letter-spacing: 2px; z-index: 10; margin: 0 -4px;}
+
+        /* Code Lines */
+        .code-container { background: white; border: 2px solid var(--text-dark); padding: 10px; font-family: var(--font-mono); font-size: 0.9rem; box-shadow: 4px 4px 0 rgba(0,0,0,0.1); width: 80%; margin: 0 auto;}
+        .code-line { padding: 4px 8px; border-left: 4px solid transparent; margin-bottom: 2px; transition: all 0.2s;}
+        .code-line.active { background: var(--hl-yellow); border-left-color: var(--text-dark); font-weight: bold; transform: scale(1.02); box-shadow: 2px 2px 0 rgba(0,0,0,0.1);}
+        .code-line.error { background: #fca5a5; border-left-color: var(--kernel-red); font-weight: bold; color: #7f1d1d; animation: shake 0.4s;}
+
+        /* RIGHT COLUMN: OS TERMINAL */
+        .os-log-container { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); display: flex; flex-direction: column; height: 600px;}
+        .os-log { flex: 1; color: #38bdf8; font-family: var(--font-mono); padding: 15px; overflow-y: auto; font-size: 0.8rem; }
+        .os-log p { margin: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;}
+        .log-sys { color: #f43f5e; font-weight: bold; }
+        .log-action { color: #cbd5e1; }
+        .log-warn { color: #fbbf24; font-weight: bold; }
+        .log-error { color: #ef4444; font-weight: bold; background: rgba(239,68,68,0.1); padding: 2px;}
+        .log-success { color: #a3e635; font-weight: bold; }
+
+        /* Step Controls */
+        .step-container { display: flex; gap: 15px; margin-top: 15px; width: 100%; justify-content: center;}
+        .step-btn { 
+            background: var(--white); border: 3px solid var(--text-dark); padding: 10px 20px; font-size: 1rem; 
+            font-weight: bold; cursor: pointer; text-transform: lowercase; 
+            box-shadow: 4px 4px 0 var(--text-dark); transition: all 0.1s;
+        }
+        .step-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 2px 2px 0 transparent; }
+        .step-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+
+        @keyframes popIn { 0% { transform: translateY(-10px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+        .bg-red-flash { animation: bgRed 0.5s; }
+        @keyframes bgRed { 50% { background-color: #fecaca; } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1> the boundary</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. The Golden Rule of OS</h3>
+                    <p class="definition">Never trust the user's code. All hardware access must be restricted.</p>
+                    <ul>
+                        <li>If a Python script had direct access to the hard drive, a bug could accidentally overwrite the operating system itself.</li>
+                        <li>To prevent this, the OS isolates code into two physical states: <strong>User Space</strong> and <strong>Kernel Space</strong>.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. The Dual-Mode CPU & Registers</h3>
+                    <p class="definition">Protection is enforced by the physical CPU Hardware.</p>
+                    <ul>
+                        <li><strong>Mode Bit (1): User Mode.</strong> The CPU will refuse to execute hardware commands.</li>
+                        <li><strong>Mode Bit (0): Kernel Mode.</strong> "God Mode". The CPU executes anything.</li>
+                        <li><strong>Program Counter (RIP):</strong> Points to the exact line of code currently executing.</li>
+                        <li><strong>Stack Pointer (RSP):</strong> Tracks active functions. <em>Crucially, User Space and Kernel Space have completely separate physical Stacks!</em></li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. The System Call (Syscall) / Trap</h3>
+                    <p class="definition">How does a user program read a file if it's restricted?</p>
+                    <ul>
+                        <li>The program triggers a <strong>Trap</strong> (a deliberate software exception).</li>
+                        <li>The CPU saves the User Stack, flips the Mode Bit to 0, jumps to the Kernel Stack, verifies permissions, does the work, and hands the data back.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <strong style="text-transform: uppercase; color: var(--accent-purple);">Load Scenario:</strong>
+                <button class="ui-btn active mode-btn" onclick="setMode('SAFE', this)">1. Math (Safe)</button>
+                <button class="ui-btn mode-btn" onclick="setMode('SYSCALL', this)">2. Read File (Trap)</button>
+                <button class="ui-btn mode-btn" onclick="setMode('HACK', this)">3. Hard Drive Hack</button>
+                <button class="ui-btn mode-btn" onclick="setMode('DIV0', this)">4. Divide by Zero</button>
+                <button class="ui-btn mode-btn" onclick="setMode('FORK', this)">5. Fork Process</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn reset-btn" onclick="resetSim()">↺ Reset CPU</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="cpu-view">
+                <div class="cpu-box" id="cpu-box">
+                    <div class="module-header">CPU Hardware State</div>
+                    <div style="font-weight: bold; color: #64748b; margin-top: 10px;">Mode Bit (Ring Level)</div>
+                    <div class="mode-bit-display" id="mode-bit">1</div>
+                    <div class="mode-label" id="mode-label">User Mode</div>
+                    
+                    <div class="hardware-registers">
+                        <div class="reg-line"><span>PC (RIP):</span> <span class="reg-val" id="reg-rip">0x0040</span></div>
+                        <div class="reg-line"><span>Stack (RSP):</span> <span class="reg-val" id="reg-rsp">0x7FF0</span></div>
+                        <div class="reg-line"><span>Sys ID (RAX):</span> <span class="reg-val" id="reg-rax">0x00</span></div>
+                    </div>
+                </div>
+
+                <div class="cpu-box" style="padding: 10px;">
+                    <div style="font-weight: 900; font-size: 0.9rem; margin-bottom: 15px;">Active Call Stacks</div>
+                    <div class="stacks-container">
+                        <div class="stack-col">
+                            <div class="stack-title">User Stack</div>
+                            <div id="user-stack-container" style="display:flex; flex-direction:column; justify-content:flex-end; height:100%;"></div>
+                        </div>
+                        <div class="stack-col" style="background: #fef2f2; border-color: var(--kernel-red);">
+                            <div class="stack-title" style="background: var(--kernel-red);">Kernel Stack</div>
+                            <div id="kernel-stack-container" style="display:flex; flex-direction:column; justify-content:flex-end; height:100%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sandbox-view">
+                
+                <div class="space-zone user-space">
+                    <div class="space-label">User Space (Ring 3)</div>
+                    <div class="code-container" id="user-code">
+                        </div>
+                </div>
+
+                <div class="system-call-barrier">
+                    SYSTEM CALL INTERFACE
+                </div>
+
+                <div class="space-zone kernel-space">
+                    <div class="space-label">Kernel Space (Ring 0)</div>
+                    <div class="code-container" id="kernel-code" style="background: #1e293b; color: #e2e8f0; border-color: #0f172a;">
+                        </div>
+                </div>
+
+                <div class="step-container">
+                    <button class="step-btn" onclick="stepBack()" id="back-btn" disabled>← Step Back</button>
+                    <button class="step-btn" onclick="tickClock()" id="tick-btn" style="background: var(--hl-yellow);">Step CPU ➔</button>
+                </div>
+            </div>
+
+            <div class="os-log-container">
+                <div class="module-header">OS Kernel Terminal</div>
+                <div class="os-log" id="os-log"></div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // --- SYSTEM STATE & SCENARIOS ---
+        let mode = 'SAFE'; 
+        let stepIdx = 0;
+        let historyStack = [];
+
+        // Scenarios define the Code to display and the Steps to animate
+        const SCENARIOS = {
+            'SAFE': {
+                uCode: [
+                    { id: 'u1', text: 'void main() {' },
+                    { id: 'u2', text: '  int a = 5;' },
+                    { id: 'u3', text: '  int b = 10;' },
+                    { id: 'u4', text: '  int sum = a + b;' },
+                    { id: 'u5', text: '}' }
+                ],
+                kCode: [
+                    { id: 'k1', text: '// Kernel idle...' }
+                ],
+                steps: [
+                    { line: 'u2', rip: '0x0040', rsp: '0x7FE8', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "Pushed main() to User Stack. Declared variable 'a'." },
+                    { line: 'u3', rip: '0x0044', rsp: '0x7FE4', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "Declared variable 'b'." },
+                    { line: 'u4', rip: '0x0048', rsp: '0x7FE0', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "ALU performs addition. Stored in User RAM." },
+                    { line: 'u5', rip: '0x004C', rsp: '0x7FF0', rax: '-', bit: 1, uStack: [], kStack: [], msg: "main() completes. Popped from User Stack.", type: 'log-success' }
+                ]
+            },
+            'SYSCALL': {
+                uCode: [
+                    { id: 'u1', text: 'void main() {' },
+                    { id: 'u2', text: '  String data;' },
+                    { id: 'u3', text: '  data = read("file.txt");' },
+                    { id: 'u4', text: '  print(data);' },
+                    { id: 'u5', text: '}' }
+                ],
+                kCode: [
+                    { id: 'k1', text: 'sys_read(file_ptr) {' },
+                    { id: 'k2', text: '  check_permissions();' },
+                    { id: 'k3', text: '  fetch_disk_blocks();' },
+                    { id: 'k4', text: '  return data;' },
+                    { id: 'k5', text: '}' }
+                ],
+                steps: [
+                    { line: 'u2', rip: '0x0040', rsp: '0x7FE8', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "App executing normally in User Space." },
+                    { line: 'u3', rip: '0x0044', rsp: '0x7FE8', rax: '0x00 (sys_read)', bit: 1, uStack: ['main()'], kStack: [], msg: "Syscall triggered! RAX loaded with 0x00. CPU fires Software Trap.", type: 'log-warn' },
+                    { line: 'k1', rip: '0xFF00', rsp: '0x9FF0', rax: '0x00', bit: 0, uStack: ['main()'], kStack: ['sys_read()'], msg: "TRAP successful. Mode Bit = 0. Jumped to Kernel Stack.", type: 'log-sys' },
+                    { line: 'k2', rip: '0xFF04', rsp: '0x9FE8', rax: '0x00', bit: 0, uStack: ['main()'], kStack: ['check_perms()', 'sys_read()'], msg: "Kernel verifying user has permission to read 'file.txt'." },
+                    { line: 'k3', rip: '0xFF08', rsp: '0x9FE8', rax: '0x00', bit: 0, uStack: ['main()'], kStack: ['fetch_disk()', 'sys_read()'], msg: "Permissions OK. Kernel securely accessing physical hard drive." },
+                    { line: 'k5', rip: '0xFF10', rsp: '0x9FF0', rax: '0x00', bit: 0, uStack: ['main()'], kStack: [], msg: "Disk data copied to buffer. Popping Kernel Stack. Returning via IRET.", type: 'log-success' },
+                    { line: 'u4', rip: '0x0048', rsp: '0x7FE8', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "Mode Bit restored to 1. User app resumes with the requested file data.", type: 'log-success' }
+                ]
+            },
+            'HACK': {
+                uCode: [
+                    { id: 'u1', text: 'void main() {' },
+                    { id: 'u2', text: '  // Attempt direct hardware bypass' },
+                    { id: 'u3', text: '  int* disk_controller = 0xFA00;' },
+                    { id: 'u4', text: '  *disk_controller = 1;' },
+                    { id: 'u5', text: '}' }
+                ],
+                kCode: [
+                    { id: 'k1', text: 'trap_handler() {' },
+                    { id: 'k2', text: '  kill_process(SIGSEGV);' },
+                    { id: 'k3', text: '}' }
+                ],
+                steps: [
+                    { line: 'u3', rip: '0x0040', rsp: '0x7FE8', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "Malicious app assigns pointer to restricted hardware address." },
+                    { line: 'u4', rip: '0x0044', rsp: '0x7FE8', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "App attempts to write directly to disk controller!" },
+                    { line: 'u4', rip: '0x0044', rsp: '0x7FE8', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "CPU HARDWARE FAULT: Mode bit is 1. Access Denied.", type: 'log-error', err: true },
+                    { line: 'k2', rip: '0xFF00', rsp: '0x9FF0', rax: '-', bit: 0, uStack: ['main()'], kStack: ['trap_handler()'], msg: "Hardware instantly throws exception to Kernel. Mode Bit = 0.", type: 'log-sys', err: true },
+                    { line: 'k3', rip: '0xFF04', rsp: '0x9FF0', rax: '-', bit: 0, uStack: [], kStack: [], msg: "OS Kernel sends SIGSEGV (Segmentation Fault). Process destroyed.", type: 'log-sys' }
+                ]
+            },
+            'DIV0': {
+                uCode: [
+                    { id: 'u1', text: 'void main() {' },
+                    { id: 'u2', text: '  int items = 10;' },
+                    { id: 'u3', text: '  int boxes = 0;' },
+                    { id: 'u4', text: '  int res = items / boxes;' },
+                    { id: 'u5', text: '}' }
+                ],
+                kCode: [
+                    { id: 'k1', text: 'exception_handler() {' },
+                    { id: 'k2', text: '  dump_core();' },
+                    { id: 'k3', text: '  kill_process(SIGFPE);' },
+                    { id: 'k4', text: '}' }
+                ],
+                steps: [
+                    { line: 'u2', rip: '0x0040', rsp: '0x7FE8', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "Executing normal math operations." },
+                    { line: 'u3', rip: '0x0044', rsp: '0x7FE4', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "Executing normal math operations." },
+                    { line: 'u4', rip: '0x0048', rsp: '0x7FE4', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "App attempts to divide by zero in the ALU." },
+                    { line: 'u4', rip: '0x0048', rsp: '0x7FE4', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "CPU ALU FAULT: Mathematical impossibility.", type: 'log-error', err: true },
+                    { line: 'k3', rip: '0xFF04', rsp: '0x9FF0', rax: '-', bit: 0, uStack: ['main()'], kStack: ['exception()'], msg: "CPU hardware traps to OS Kernel. Mode Bit = 0.", type: 'log-sys', err: true },
+                    { line: 'k4', rip: '0xFF08', rsp: '0x9FF0', rax: '-', bit: 0, uStack: [], kStack: [], msg: "OS Kernel sends SIGFPE (Floating Point Exception). App crashes safely.", type: 'log-sys' }
+                ]
+            },
+            'FORK': {
+                uCode: [
+                    { id: 'u1', text: 'void main() {' },
+                    { id: 'u2', text: '  pid_t pid;' },
+                    { id: 'u3', text: '  pid = fork();' },
+                    { id: 'u4', text: '  if (pid == 0) exec();' },
+                    { id: 'u5', text: '}' }
+                ],
+                kCode: [
+                    { id: 'k1', text: 'sys_fork() {' },
+                    { id: 'k2', text: '  pcb_t* new_proc = alloc_pcb();' },
+                    { id: 'k3', text: '  copy_memory_pages();' },
+                    { id: 'k4', text: '  return child_pid;' },
+                    { id: 'k5', text: '}' }
+                ],
+                steps: [
+                    { line: 'u2', rip: '0x0040', rsp: '0x7FE8', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "App preparing to spawn a child process." },
+                    { line: 'u3', rip: '0x0044', rsp: '0x7FE8', rax: '0x02 (sys_fork)', bit: 1, uStack: ['main()'], kStack: [], msg: "fork() called. RAX loaded with 0x02. Firing Software Trap.", type: 'log-warn' },
+                    { line: 'k2', rip: '0xFF00', rsp: '0x9FF0', rax: '0x02', bit: 0, uStack: ['main()'], kStack: ['sys_fork()'], msg: "TRAP successful. Kernel allocating new PCB for child.", type: 'log-sys' },
+                    { line: 'k3', rip: '0xFF04', rsp: '0x9FE8', rax: '0x02', bit: 0, uStack: ['main()'], kStack: ['copy_mem()', 'sys_fork()'], msg: "Kernel copying parent's memory pages to child." },
+                    { line: 'k4', rip: '0xFF08', rsp: '0x9FF0', rax: '0x02', bit: 0, uStack: ['main()'], kStack: ['sys_fork()'], msg: "Child created successfully. Preparing to return PID to parent.", type: 'log-success' },
+                    { line: 'u4', rip: '0x0048', rsp: '0x7FE8', rax: '-', bit: 1, uStack: ['main()'], kStack: [], msg: "Returned to User Space. Mode Bit = 1. Parent has new child PID.", type: 'log-success' }
+                ]
+            }
+        };
+
+        // --- DOM Elements ---
+        const logUI = document.getElementById('os-log');
+        const modeBitUI = document.getElementById('mode-bit');
+        const modeLabelUI = document.getElementById('mode-label');
+        const regRipUI = document.getElementById('reg-rip');
+        const regRspUI = document.getElementById('reg-rsp');
+        const regRaxUI = document.getElementById('reg-rax');
+        const cpuBoxUI = document.getElementById('cpu-box');
+        
+        const userCodeUI = document.getElementById('user-code');
+        const kernelCodeUI = document.getElementById('kernel-code');
+        const userStackUI = document.getElementById('user-stack-container');
+        const kernelStackUI = document.getElementById('kernel-stack-container');
+
+        const backBtn = document.getElementById('back-btn');
+        const tickBtn = document.getElementById('tick-btn');
+
+        // --- Core Functions ---
+        function osLog(msg, type = "log-action") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerText = `> ${msg}`;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight; 
+        }
+
+        function setMode(newMode, btnElement) {
+            mode = newMode;
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            btnElement.classList.add('active');
+            resetSim();
+        }
+
+        function renderCodeBlocks() {
+            let sc = SCENARIOS[mode];
+            
+            userCodeUI.innerHTML = '';
+            sc.uCode.forEach(line => {
+                userCodeUI.innerHTML += `<div class="code-line" id="line-${line.id}">${line.text.replace(/ /g, '&nbsp;')}</div>`;
+            });
+
+            kernelCodeUI.innerHTML = '';
+            sc.kCode.forEach(line => {
+                kernelCodeUI.innerHTML += `<div class="code-line" id="line-${line.id}">${line.text.replace(/ /g, '&nbsp;')}</div>`;
+            });
+        }
+
+        function resetSim() {
+            stepIdx = 0;
+            historyStack = [];
+            logUI.innerHTML = '';
+            cpuBoxUI.classList.remove('bg-red-flash');
+            
+            renderCodeBlocks();
+            
+            let sc = SCENARIOS[mode];
+            osLog(`Loaded Scenario: ${mode}`, "log-sys");
+            
+            // Set initial blank state before step 0
+            updateVisuals({ line: null, rip: '0x0000', rsp: '0x7FF0', rax: '-', bit: 1, uStack: [], kStack: [] });
+            
+            tickBtn.disabled = false;
+            tickBtn.innerText = "Start Execution ➔";
+            tickBtn.style.background = "var(--hl-yellow)";
+            backBtn.disabled = true;
+        }
+
+        function updateRegisters(rip, rsp, rax) {
+            if(regRipUI.innerText !== rip) { regRipUI.innerText = rip; regRipUI.classList.add('updated'); }
+            if(regRspUI.innerText !== rsp) { regRspUI.innerText = rsp; regRspUI.classList.add('updated'); }
+            if(regRaxUI.innerText !== rax) { regRaxUI.innerText = rax; regRaxUI.classList.add('updated'); }
+            
+            setTimeout(() => {
+                regRipUI.classList.remove('updated');
+                regRspUI.classList.remove('updated');
+                regRaxUI.classList.remove('updated');
+            }, 300);
+        }
+
+        function updateVisuals(step) {
+            // CPU State
+            if (step.bit === 0) {
+                modeBitUI.innerText = '0'; modeBitUI.style.color = 'var(--kernel-red)';
+                modeLabelUI.innerText = 'Kernel Mode'; modeLabelUI.style.color = 'var(--kernel-red)';
+            } else {
+                modeBitUI.innerText = '1'; modeBitUI.style.color = 'var(--user-green)';
+                modeLabelUI.innerText = 'User Mode'; modeLabelUI.style.color = 'var(--user-green)';
+            }
+
+            // Registers
+            updateRegisters(step.rip, step.rsp, step.rax);
+
+            // Code Highlight
+            document.querySelectorAll('.code-line').forEach(el => {
+                el.classList.remove('active');
+                el.classList.remove('error');
+            });
+            if (step.line) {
+                let activeLine = document.getElementById(`line-${step.line}`);
+                if (activeLine) {
+                    if (step.err) activeLine.classList.add('error');
+                    else activeLine.classList.add('active');
+                }
+            }
+
+            // Stacks
+            userStackUI.innerHTML = '';
+            // Reverse so top of array is top of stack visually
+            [...step.uStack].reverse().forEach(frame => {
+                userStackUI.innerHTML += `<div class="stack-frame sf-user">${frame}</div>`;
+            });
+
+            kernelStackUI.innerHTML = '';
+            [...step.kStack].reverse().forEach(frame => {
+                kernelStackUI.innerHTML += `<div class="stack-frame sf-kernel">${frame}</div>`;
+            });
+            
+            // Error Flashes
+            if (step.err) {
+                cpuBoxUI.classList.add('bg-red-flash');
+                setTimeout(() => cpuBoxUI.classList.remove('bg-red-flash'), 500);
+            }
+        }
+
+        function saveState() {
+            historyStack.push({
+                stepIdx,
+                logHTML: logUI.innerHTML
+            });
+        }
+
+        function stepBack() {
+            if (historyStack.length === 0) return;
+            let snap = historyStack.pop();
+            
+            stepIdx = snap.stepIdx;
+            logUI.innerHTML = snap.logHTML;
+            
+            // Re-apply visual state of the PREVIOUS step
+            if (stepIdx === 0) {
+                updateVisuals({ line: null, rip: '0x0000', rsp: '0x7FF0', rax: '-', bit: 1, uStack: [], kStack: [] });
+            } else {
+                updateVisuals(SCENARIOS[mode].steps[stepIdx - 1]);
+            }
+            
+            tickBtn.disabled = false;
+            tickBtn.innerText = "Step CPU ➔";
+            tickBtn.style.background = "var(--hl-yellow)";
+            backBtn.disabled = historyStack.length === 0;
+        }
+
+        function tickClock() {
+            let sc = SCENARIOS[mode];
+            if (stepIdx >= sc.steps.length) return;
+            
+            saveState();
+            let step = sc.steps[stepIdx];
+            stepIdx++;
+
+            osLog(step.msg, step.type || "log-action");
+            updateVisuals(step);
+
+            let isDone = stepIdx >= sc.steps.length;
+            tickBtn.disabled = isDone;
+            tickBtn.innerText = isDone ? "Execution Halted" : "Step CPU ➔";
+            tickBtn.style.background = isDone ? "#e2e8f0" : "var(--hl-yellow)";
+            backBtn.disabled = historyStack.length === 0;
+        }
+
+        // Init
+        resetSim();
+    </script>
+</body>
+</html>

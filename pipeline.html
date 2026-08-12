@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | hardware part 1: pipeline & hazards</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+            
+            /* Pipeline Stage Colors */
+            --c-if: #3b82f6; 
+            --c-id: #a855f7; 
+            --c-ex: #ef4444; 
+            --c-mem: #f59e0b; 
+            --c-wb: #10b981; 
+            --c-bubble: #cbd5e1; 
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1500px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.2rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.9rem; margin: 0;}
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 15px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase; font-size: 0.85rem;
+        }
+        .ui-btn:hover:not(:disabled) { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-core { background: #e2e8f0; }
+        .btn-core.active { background: var(--accent-purple); color: white; }
+        .btn-action { background: var(--hl-cyan); }
+        .btn-clock { background: #10b981; color: white;}
+        .btn-auto { background: #ef4444; color: white;}
+
+        /* 2-COLUMN DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 1fr 400px; gap: 20px; align-items: start;}
+        
+        /* LEFT COLUMN: CPU CORES */
+        .cpu-container { display: flex; flex-direction: column; gap: 20px; background: #fdfcfa; border: 4px dashed var(--accent-purple); padding: 20px; min-height: 400px;}
+        
+        .core-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px; position: relative;}
+        .core-header { position: absolute; top: -15px; left: 15px; background: var(--text-dark); color: white; font-weight: 900; padding: 2px 10px; border: 2px solid var(--text-dark); text-transform: uppercase;}
+        
+        .pipeline-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 15px;}
+        
+        .stage-col { display: flex; flex-direction: column; align-items: center; gap: 10px;}
+        .stage-label { font-weight: 900; font-size: 0.8rem; text-transform: uppercase; color: #64748b;}
+        .stage-slot { width: 100%; height: 80px; border: 3px dashed #cbd5e1; background: #f8fafc; display: flex; justify-content: center; align-items: center; position: relative; transition: all 0.2s;}
+        .stage-slot.stalled { border-color: #ef4444; background: #fef2f2; animation: flashRed 1s infinite alternate; }
+        
+        /* Instruction Blocks */
+        .inst-block { width: 95%; height: 90%; display: flex; flex-direction: column; justify-content: center; align-items: center; font-weight: bold; font-family: var(--font-mono); color: white; border: 3px solid var(--text-dark); box-shadow: 2px 2px 0 var(--text-dark); animation: slideIn 0.2s ease-out; font-size: 0.85rem; text-align: center;}
+        .inst-block .i-id { font-size: 0.65rem; background: rgba(0,0,0,0.3); padding: 1px 4px; margin-bottom: 2px;}
+        
+        .inst-if { background: var(--c-if); }
+        .inst-id { background: var(--c-id); }
+        .inst-ex { background: var(--c-ex); }
+        .inst-mem { background: var(--c-mem); }
+        .inst-wb { background: var(--c-wb); }
+        
+        /* The Bubble */
+        .inst-bubble { background: var(--c-bubble); color: #475569; border-style: dashed; box-shadow: none; font-style: italic;}
+
+        /* RIGHT COLUMN: QUEUE & METRICS */
+        .metrics-panel { display: flex; flex-direction: column; gap: 15px; }
+        
+        .metrics-box { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px; color: white;}
+        .m-header { font-weight: 900; font-size: 1rem; text-transform: uppercase; border-bottom: 2px dashed #475569; padding-bottom: 5px; margin-bottom: 10px; color: var(--hl-cyan);}
+        
+        .stat-row { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 1rem; margin-bottom: 8px;}
+        .stat-val { font-weight: 900; color: var(--hl-yellow);}
+        .stat-ipc { font-size: 2.5rem; color: #10b981; font-weight: 900; text-align: center; margin-top: 5px; line-height: 1;}
+        .stat-sub { text-align: center; font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; font-weight: bold;}
+
+        /* Register File Tracker */
+        .reg-file-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px;}
+        .reg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .reg-slot { border: 2px solid var(--text-dark); padding: 8px; font-family: var(--font-mono); font-size: 0.85rem; font-weight: bold; display: flex; justify-content: space-between; background: #f8fafc;}
+        .reg-slot.locked { background: #fecaca; color: #7f1d1d; border-color: #ef4444; animation: popIn 0.2s;}
+
+        /* Split Bottom Right */
+        .split-bottom { display: flex; gap: 15px; height: 250px;}
+        
+        .queue-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 10px; flex: 1; display: flex; flex-direction: column;}
+        .queue-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; flex: 1;}
+        .queue-item { background: #e2e8f0; border: 2px solid var(--text-dark); padding: 4px 8px; font-weight: bold; font-family: var(--font-mono); font-size: 0.75rem; display: flex; justify-content: space-between;}
+
+        .hazard-log-box { background: #0f172a; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 10px; flex: 1; display: flex; flex-direction: column; overflow: hidden;}
+        .hazard-log { font-family: var(--font-mono); font-size: 0.75rem; overflow-y: auto; flex: 1; color: #cbd5e1;}
+        .hazard-log p { margin: 4px 0; border-bottom: 1px dashed #334155; padding-bottom: 4px;}
+
+        @keyframes slideIn { 0% { transform: translateX(-20px); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }
+        @keyframes popIn { 0% { transform: scale(0.9); } 100% { transform: scale(1); } }
+        @keyframes flashRed { from { background-color: #fef2f2; } to { background-color: #fee2e2; } }
+        
+        .legend { display: flex; justify-content: center; gap: 15px; margin-top: 20px; flex-wrap: wrap;}
+        .leg-item { display: flex; align-items: center; gap: 5px; font-size: 0.85rem; font-weight: bold;}
+        .leg-color { width: 15px; height: 15px; border: 2px solid var(--text-dark);}
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1>pipeline & hazards</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. The 5-Stage Pipeline</h3>
+                    <p class="definition">Every single instruction must go through 5 hardware stages.</p>
+                    <ul>
+                        <li><strong style="color:var(--c-if)">Fetch (IF):</strong> Grab the instruction from RAM.</li>
+                        <li><strong style="color:var(--c-id)">Decode (ID):</strong> Figure out what it means and check registers.</li>
+                        <li><strong style="color:var(--c-ex)">Execute (EX):</strong> The ALU does the math.</li>
+                        <li><strong style="color:var(--c-mem)">Memory (MEM):</strong> Read/Write to data RAM if necessary.</li>
+                        <li><strong style="color:var(--c-wb)">Writeback (WB):</strong> Save the result back to a CPU Register.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. Data Hazards & The Stall Condition</h3>
+                    <p class="definition">The exact logic that forces a CPU to freeze.</p>
+                    <ul>
+                        <li>If <code>I1</code> is writing to <strong>R1</strong>, it "Locks" that register.</li>
+                        <li>When <code>I2</code> enters the Decode stage, it checks the lock table. <strong>The Condition:</strong> If <code>I2</code> needs to read a register that is currently locked by a previous instruction, it must wait.</li>
+                        <li>The Decode stage hits the brakes and STALLS the pipeline.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. The Pipeline Bubble</h3>
+                    <p class="definition">What happens when the pipeline stalls?</p>
+                    <ul>
+                        <li>To keep the hardware moving, the Decode stage injects a <strong>Bubble (No-Op)</strong> into the Execute stage. This is a completely wasted clock cycle!</li>
+                        <li>Watch the <strong>Hazard Log</strong> below to see exactly which register caused the stall in real-time.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <strong style="text-transform: uppercase; color: var(--accent-purple);">Hardware Configuration:</strong>
+                <button class="ui-btn btn-core active" onclick="setCores(1, this)">1 Core</button>
+                <button class="ui-btn btn-core" onclick="setCores(2, this)">2 Cores</button>
+                <button class="ui-btn btn-core" onclick="setCores(4, this)">4 Cores</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn btn-action" onclick="addInstructions(10)">+ Load 10 ASM Inst</button>
+                <button class="ui-btn btn-action" onclick="addInstructions(50)">+ Load 50 ASM Inst</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn" onclick="stepBack()" id="btn-back" disabled style="background: var(--white); color: var(--text-dark);">← Step Back</button>
+                <button class="ui-btn btn-clock" onclick="tickClock()" id="btn-step">⚡ Step Clock</button>
+                <button class="ui-btn btn-auto" onclick="toggleAuto()" id="btn-auto">▶ Auto Run</button>
+                <button class="ui-btn reset-btn" onclick="resetSim()">↺ Reset HW</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            
+            <div style="display:flex; flex-direction: column;">
+                <div class="cpu-container" id="cpu-container">
+                    </div>
+
+                <div class="legend">
+                    <div class="leg-item"><div class="leg-color" style="background: var(--c-if);"></div> Fetch</div>
+                    <div class="leg-item"><div class="leg-color" style="background: var(--c-id);"></div> Decode</div>
+                    <div class="leg-item"><div class="leg-color" style="background: var(--c-ex);"></div> Execute</div>
+                    <div class="leg-item"><div class="leg-color" style="background: var(--c-mem);"></div> Memory</div>
+                    <div class="leg-item"><div class="leg-color" style="background: var(--c-wb);"></div> Writeback</div>
+                    <div class="leg-item"><div class="leg-color" style="background: var(--c-bubble); border-style:dashed;"></div> Bubble (Stall)</div>
+                </div>
+            </div>
+
+            <div class="metrics-panel">
+                
+                <div class="metrics-box">
+                    <div class="m-header">Performance Metrics</div>
+                    <div class="stat-row"><span>Clock Cycles:</span> <span class="stat-val" id="stat-clock">0</span></div>
+                    <div class="stat-row"><span>Instructions Finished:</span> <span class="stat-val" id="stat-comp">0</span></div>
+                    <div class="stat-row"><span>Wasted Bubbles:</span> <span class="stat-val" id="stat-bub" style="color:#ef4444;">0</span></div>
+                    <div class="stat-ipc" id="stat-ipc">0.00</div>
+                    <div class="stat-sub">Instructions Per Cycle (IPC)</div>
+                </div>
+
+                <div class="reg-file-box">
+                    <div class="m-header" style="color: var(--text-dark); border-color: var(--text-dark); font-size:1rem; margin-bottom:10px;">Live Register File</div>
+                    <div class="reg-grid" id="reg-file-ui">
+                        </div>
+                </div>
+
+                <div class="split-bottom">
+                    <div class="queue-box">
+                        <div class="m-header" style="color: var(--text-dark); border-color: var(--text-dark); font-size:0.9rem; margin-bottom:5px;">Instruction Queue</div>
+                        <div class="queue-list" id="queue-list">
+                            </div>
+                    </div>
+                    
+                    <div class="hazard-log-box">
+                        <div class="m-header" style="color: #fca5a5; border-color: #fca5a5; font-size:0.9rem; margin-bottom:5px;">Hazard Detection Unit</div>
+                        <div class="hazard-log" id="hazard-log">
+                            </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // --- SYSTEM STATE ---
+        let numCores = 1;
+        let clock = 0;
+        let completed = 0;
+        let bubbles = 0;
+        let instCounter = 1;
+        let queue = [];
+        let autoInterval = null;
+        let historyStack = []; // Added History Stack for Step Back
+
+        // Assembly Generation Data
+        const REGISTERS = ['R1', 'R2', 'R3', 'R4'];
+        const OPS = ['ADD', 'SUB', 'MUL', 'LDR'];
+        let lockedRegisters = { 'R1': null, 'R2': null, 'R3': null, 'R4': null };
+
+        // Pipeline Core State
+        let coresData = [];
+        const STAGE_NAMES = ['IF', 'ID', 'EX', 'MEM', 'WB'];
+        const STAGE_CLASSES = ['inst-if', 'inst-id', 'inst-ex', 'inst-mem', 'inst-wb'];
+
+        // DOM Elements
+        const cpuContainer = document.getElementById('cpu-container');
+        const statClock = document.getElementById('stat-clock');
+        const statComp = document.getElementById('stat-comp');
+        const statBub = document.getElementById('stat-bub');
+        const statIpc = document.getElementById('stat-ipc');
+        const regFileUI = document.getElementById('reg-file-ui');
+        const queueList = document.getElementById('queue-list');
+        const hazardLogUI = document.getElementById('hazard-log');
+        const btnAuto = document.getElementById('btn-auto');
+        const btnStep = document.getElementById('btn-step');
+        const btnBack = document.getElementById('btn-back'); // Back button
+
+        // --- INIT & CONTROLS ---
+
+        function hLog(msg, color="#cbd5e1") {
+            const p = document.createElement('p');
+            p.style.color = color;
+            p.innerHTML = `[T=${clock}] ${msg}`;
+            hazardLogUI.appendChild(p);
+            hazardLogUI.scrollTop = hazardLogUI.scrollHeight;
+        }
+
+        function setCores(n, btn) {
+            numCores = n;
+            document.querySelectorAll('.btn-core').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            resetSim();
+        }
+
+        function buildCores() {
+            coresData = [];
+            cpuContainer.innerHTML = '';
+            
+            for(let i=0; i<numCores; i++) {
+                coresData.push({ IF: null, ID: null, EX: null, MEM: null, WB: null, stalled: false });
+                
+                let coreHtml = `
+                    <div class="core-box">
+                        <div class="core-header">CPU Core ${i}</div>
+                        <div class="pipeline-grid">
+                            ${STAGE_NAMES.map(s => `
+                                <div class="stage-col">
+                                    <div class="stage-label">${s}</div>
+                                    <div class="stage-slot" id="core${i}-${s}"></div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+                cpuContainer.innerHTML += coreHtml;
+            }
+            renderPipeline();
+        }
+
+        function resetSim() {
+            clock = 0;
+            completed = 0;
+            bubbles = 0;
+            instCounter = 1;
+            queue = [];
+            lockedRegisters = { 'R1': null, 'R2': null, 'R3': null, 'R4': null };
+            hazardLogUI.innerHTML = '';
+            
+            // Clear History
+            historyStack = [];
+            btnBack.disabled = true;
+            
+            if(autoInterval) toggleAuto();
+            buildCores();
+            updateMetrics();
+            renderRegisters();
+            renderQueue();
+            hLog("System Reset. Hazard Unit Ready.", "#10b981");
+        }
+
+        function generateInstruction() {
+            let op = OPS[Math.floor(Math.random() * OPS.length)];
+            let dest = REGISTERS[Math.floor(Math.random() * REGISTERS.length)];
+            let src = REGISTERS[Math.floor(Math.random() * REGISTERS.length)];
+            while(src === dest) src = REGISTERS[Math.floor(Math.random() * REGISTERS.length)];
+
+            return { id: `I${instCounter++}`, op, dest, src, text: `${op} ${dest}, ${src}`, isBubble: false };
+        }
+
+        function addInstructions(count) {
+            for(let i=0; i<count; i++) queue.push(generateInstruction());
+            renderQueue();
+        }
+
+        function toggleAuto() {
+            if (autoInterval) {
+                clearInterval(autoInterval);
+                autoInterval = null;
+                btnAuto.innerText = "▶ Auto Run";
+                btnAuto.style.background = "#ef4444";
+                btnStep.disabled = false;
+            } else {
+                autoInterval = setInterval(tickClock, 800); 
+                btnAuto.innerText = "⏸ Pause Auto";
+                btnAuto.style.background = "#f59e0b";
+                btnStep.disabled = true;
+            }
+        }
+
+        // --- STATE SAVING ENGINE ---
+        
+        function saveState() {
+            // Push a deep clone of the entire CPU state to the stack
+            historyStack.push({
+                clock: clock,
+                completed: completed,
+                bubbles: bubbles,
+                instCounter: instCounter,
+                queue: JSON.parse(JSON.stringify(queue)),
+                lockedRegisters: JSON.parse(JSON.stringify(lockedRegisters)),
+                coresData: JSON.parse(JSON.stringify(coresData)),
+                logHTML: hazardLogUI.innerHTML
+            });
+            btnBack.disabled = false;
+        }
+
+        function stepBack() {
+            if (historyStack.length === 0) return;
+            if (autoInterval) toggleAuto(); // Pause auto-run if active
+
+            // Pop the last snapshot and overwrite current state
+            let snap = historyStack.pop();
+            clock = snap.clock;
+            completed = snap.completed;
+            bubbles = snap.bubbles;
+            instCounter = snap.instCounter;
+            queue = snap.queue;
+            lockedRegisters = snap.lockedRegisters;
+            coresData = snap.coresData;
+            hazardLogUI.innerHTML = snap.logHTML;
+
+            // Re-render everything
+            renderPipeline();
+            renderRegisters();
+            renderQueue();
+            updateMetrics();
+
+            btnBack.disabled = historyStack.length === 0;
+        }
+
+        // --- PIPELINE LOGIC (HAZARD AWARE) ---
+
+        function tickClock() {
+            let isIdle = queue.length === 0;
+            coresData.forEach(c => { if(c.IF || c.ID || c.EX || c.MEM || c.WB) isIdle = false; });
+
+            if(isIdle && autoInterval) { toggleAuto(); return; }
+            if(isIdle) return; // Do nothing if entirely idle
+
+            // SAVE STATE right before modifying the pipeline
+            saveState();
+
+            clock++;
+
+            // 1. Writeback finishes FIRST, unlocking registers
+            for(let i=0; i<numCores; i++) {
+                let core = coresData[i];
+                if (core.WB && !core.WB.isBubble) {
+                    completed++;
+                    if(lockedRegisters[core.WB.dest] === core.WB.id) {
+                        lockedRegisters[core.WB.dest] = null; // UNLOCK
+                    }
+                }
+                core.WB = null;
+            }
+
+            // 2. Process the rest of the pipeline Backwards
+            for(let i=0; i<numCores; i++) {
+                let core = coresData[i];
+
+                if (core.MEM) { core.WB = core.MEM; core.MEM = null; }
+                if (core.EX) { core.MEM = core.EX; core.EX = null; }
+
+                // Decode Stage: THE HAZARD CHECK CONDITION
+                core.stalled = false;
+                if (core.ID && !core.ID.isBubble) {
+                    let inst = core.ID;
+                    
+                    // Check if the source register is locked by an older instruction
+                    let lockOwner = lockedRegisters[inst.src];
+                    
+                    // THE CONDITION
+                    if (lockOwner !== null && lockOwner !== inst.id) {
+                        // STALL!
+                        core.stalled = true;
+                        core.EX = { id: 'BUB', text: 'STALL', isBubble: true };
+                        bubbles++;
+                        
+                        // Explicitly log the condition
+                        hLog(`🛑 STALL: ${inst.id} needs ${inst.src}. It is currently LOCKED by ${lockOwner}.`, "#ef4444");
+                    } else {
+                        // All clear. Lock the destination register.
+                        lockedRegisters[inst.dest] = inst.id;
+                        core.EX = core.ID;
+                        core.ID = null;
+                    }
+                }
+
+                if (core.IF && !core.ID) { core.ID = core.IF; core.IF = null; }
+                if (queue.length > 0 && !core.IF && !core.stalled) { core.IF = queue.shift(); }
+            }
+
+            renderRegisters();
+            renderPipeline();
+            renderQueue();
+            updateMetrics();
+        }
+
+        // --- RENDERERS ---
+
+        function renderPipeline() {
+            for(let i=0; i<numCores; i++) {
+                let core = coresData[i];
+                STAGE_NAMES.forEach((stage, idx) => {
+                    let slot = document.getElementById(`core${i}-${stage}`);
+                    let inst = core[stage];
+                    
+                    if (inst) {
+                        if (inst.isBubble) slot.innerHTML = `<div class="inst-block inst-bubble">BUBBLE</div>`;
+                        else slot.innerHTML = `<div class="inst-block ${STAGE_CLASSES[idx]}"><div class="i-id">${inst.id}</div>${inst.text}</div>`;
+                    } else { slot.innerHTML = ''; }
+
+                    if(stage === 'ID') {
+                        if(core.stalled) slot.classList.add('stalled');
+                        else slot.classList.remove('stalled');
+                    }
+                });
+            }
+        }
+
+        function renderRegisters() {
+            regFileUI.innerHTML = '';
+            REGISTERS.forEach(r => {
+                let lockHolder = lockedRegisters[r];
+                let lockHtml = lockHolder ? `<span style="color:#ef4444;">LOCKED (${lockHolder})</span>` : `<span style="color:#10b981;">Free</span>`;
+                let cls = lockHolder ? 'locked' : '';
+                regFileUI.innerHTML += `<div class="reg-slot ${cls}"><span>${r}</span> ${lockHtml}</div>`;
+            });
+        }
+
+        function renderQueue() {
+            let visualQueue = queue.slice(0, 30); 
+            queueList.innerHTML = visualQueue.map(q => `
+                <div class="queue-item">
+                    <span style="color:#64748b;">${q.id}</span> 
+                    <span>${q.text}</span>
+                </div>
+            `).join('');
+            if(queue.length > 30) queueList.innerHTML += `<div class="queue-item" style="justify-content:center; color:#94a3b8;">+${queue.length-30} more...</div>`;
+        }
+
+        function updateMetrics() {
+            statClock.innerText = clock;
+            statComp.innerText = completed;
+            statBub.innerText = bubbles;
+            
+            let ipc = clock === 0 ? 0 : (completed / clock).toFixed(2);
+            statIpc.innerText = ipc;
+            
+            if(ipc >= numCores * 0.75) statIpc.style.color = "#10b981"; 
+            else if(ipc > 0.4) statIpc.style.color = "#f59e0b"; 
+            else statIpc.style.color = "#ef4444"; 
+        }
+
+        // Initialize
+        buildCores();
+        renderRegisters();
+    </script>
+</body>
+</html>

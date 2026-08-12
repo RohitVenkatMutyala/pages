@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | concurrency</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 40px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { font-size: 3rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid (Vertical Stack) */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 20px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.3rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 10px; margin-bottom: 15px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.95rem; margin-top: 0; margin-bottom: 15px; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.6; font-size: 0.95rem; margin: 0;}
+        .theory-card li { margin-bottom: 8px; }
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 15px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase;
+        }
+        .ui-btn:hover { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn.active { background: var(--hl-cyan); box-shadow: 0 0 0 transparent; transform: translate(2px, 2px); }
+        .reset-btn { background: #ef4444; color: var(--white); }
+
+        /* Dashboard Layout */
+        .dashboard { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        .box { background: var(--white); border: 4px solid var(--text-dark); padding: 20px; box-shadow: 8px 8px 0 var(--text-dark); border-radius: 4px; }
+        .box h3 { margin-top: 0; text-transform: lowercase; border-bottom: 3px solid var(--text-dark); padding-bottom: 10px; font-weight: 900; }
+
+        /* Simulator Elements */
+        .shared-ram { background: #fef08a; border: 4px dashed #ca8a04; padding: 20px; text-align: center; margin-bottom: 20px; position: relative; }
+        .shared-val { font-size: 4rem; font-family: var(--font-mono); font-weight: 900; color: var(--text-dark); }
+        
+        .mutex-lock { 
+            position: absolute; top: -15px; right: 20px; background: var(--white); border: 3px solid var(--text-dark); 
+            padding: 5px 15px; font-weight: bold; box-shadow: 4px 4px 0 var(--text-dark);
+        }
+        .mutex-lock.locked { background: #ef4444; color: white; }
+        .mutex-lock.unlocked { background: #10b981; color: white; }
+
+        .thread-container { display: flex; gap: 20px; }
+        .thread-box { 
+            flex: 1; border: 4px solid var(--text-dark); padding: 15px; background: #f8fafc; 
+            position: relative; transition: opacity 0.3s;
+        }
+        .thread-box.t1 { border-top: 8px solid #3b82f6; }
+        .thread-box.t2 { border-top: 8px solid #ef4444; }
+        .thread-box.blocked { opacity: 0.5; background: #e2e8f0; }
+        
+        .local-reg { font-family: var(--font-mono); background: var(--white); border: 2px solid var(--text-dark); padding: 8px; margin-top: 10px; display: flex; justify-content: space-between; font-weight: bold;}
+        
+        .code-line { font-family: var(--font-mono); font-size: 0.9rem; padding: 4px; margin-top: 4px; border-left: 3px solid transparent; }
+        .code-line.active { background: var(--hl-yellow); border-left-color: var(--text-dark); font-weight: bold; }
+        .code-line.done { color: #94a3b8; }
+
+        /* OS Terminal */
+        .os-log { background: #1e293b; color: #38bdf8; font-family: var(--font-mono); padding: 15px; height: 450px; overflow-y: auto; font-size: 0.85rem; border: 4px solid var(--text-dark); box-shadow: 8px 8px 0 var(--text-dark); }
+        .os-log p { margin: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;}
+        .log-sys { color: #f43f5e; font-weight: bold; }
+        .log-warn { color: #fbbf24; font-weight: bold; }
+        .log-t1 { color: #60a5fa; }
+        .log-t2 { color: #f87171; }
+
+        /* Step Controls */
+        .step-container { display: flex; gap: 15px; margin-top: 20px; }
+        .step-btn { 
+            background: var(--white); border: 3px solid var(--text-dark); padding: 15px; font-size: 1.2rem; 
+            font-weight: bold; cursor: pointer; text-transform: lowercase; 
+            box-shadow: 4px 4px 0 var(--text-dark); transition: all 0.1s; display: flex; justify-content: center; align-items: center;
+        }
+        .step-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 2px 2px 0 transparent; }
+        .step-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1>concurrency & race conditions</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. The Critical Section</h3>
+                    <p class="definition">Definition: A segment of code where multiple threads access and modify the exact same shared variables or resources (like a shared database row).</p>
+                    <ul>
+                        <li>Threads have private local memory (their own registers), but they share global memory (the Heap).</li>
+                        <li>If two threads enter a Critical Section simultaneously, they will overwrite each other's work.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. Race Conditions</h3>
+                    <p class="definition">Definition: A massive bug that occurs when the output of a program depends entirely on the unpredictable timing of the OS CPU Scheduler (Context Switches).</p>
+                    <ul>
+                        <li>If Thread 1 reads a balance of $100, and is instantly interrupted by the OS before it can add money, Thread 2 might also read $100. They both add $50, and both write back $150.</li>
+                        <li>$50 has magically vanished because they raced to overwrite the same memory address.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. Mutexes (Mutual Exclusion)</h3>
+                    <p class="definition">Definition: A software "Key" or lock. Before entering a Critical Section, a thread must grab the Mutex. Only one thread can hold the key at a time.</p>
+                    <ul>
+                        <li><strong>Spinlock:</strong> If the key is taken, the thread violently loops (`while(locked)`) burning CPU cycles until the key is dropped. Good for very short waits.</li>
+                        <li><strong>Sleep Lock (Semaphore):</strong> If the key is taken, the OS intervenes, suspends the thread, moves it to a "Blocked Queue," and wakes it up later. Saves CPU, but requires a heavy context switch.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <strong style="text-transform: uppercase; color: var(--accent-purple);">Architecture:</strong>
+                <button class="ui-btn active mode-btn" onclick="setMode('UNSAFE')">Unsafe (No Locks)</button>
+                <button class="ui-btn mode-btn" onclick="setMode('MUTEX')">Mutex Protected</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn reset-btn" onclick="resetSim()">↺ Reset Hardware</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <div class="box" style="background: transparent; border: none; box-shadow: none; padding: 0;">
+                
+                <div class="shared-ram">
+                    <div class="mutex-lock unlocked" id="mutex-ui">MUTEX: UNLOCKED</div>
+                    <div style="font-weight: bold; text-transform: uppercase; color: #ca8a04;">Shared RAM (Global)</div>
+                    <div class="shared-val" id="shared-val-ui">0</div>
+                </div>
+
+                <div class="thread-container">
+                    <div class="thread-box t1" id="t1-ui">
+                        <div style="font-weight: 900; color: #1d4ed8; border-bottom: 2px solid var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;">Thread 1 (Blue)</div>
+                        <div id="t1-code"></div>
+                        <div class="local-reg"><span>Register (Local):</span> <span id="t1-reg">-</span></div>
+                        <div id="t1-status" style="margin-top: 10px; font-size: 0.85rem; font-weight: bold; color: #3b82f6;">Status: READY</div>
+                    </div>
+
+                    <div class="thread-box t2" id="t2-ui">
+                        <div style="font-weight: 900; color: #b91c1c; border-bottom: 2px solid var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;">Thread 2 (Red)</div>
+                        <div id="t2-code"></div>
+                        <div class="local-reg"><span>Register (Local):</span> <span id="t2-reg">-</span></div>
+                        <div id="t2-status" style="margin-top: 10px; font-size: 0.85rem; font-weight: bold; color: #ef4444;">Status: READY</div>
+                    </div>
+                </div>
+
+                <div class="step-container">
+                    <button class="step-btn" onclick="stepBack()" id="back-btn" style="flex: 1;" disabled>← back</button>
+                    <button class="step-btn" onclick="tickClock()" id="tick-btn" style="flex: 2; background: var(--hl-yellow);">Step CPU Scheduler ➔</button>
+                </div>
+            </div>
+
+            <div class="os-log" id="os-log">
+                </div>
+        </div>
+
+    </div>
+
+    <script>
+        // System State
+        let mode = 'UNSAFE';
+        let stepIdx = 0;
+        let historyStack = [];
+
+        // Memory & Registers
+        let sharedCounter = 0;
+        let mutex = { locked: false, owner: null };
+        
+        let t1 = { local: null, status: 'READY', pc: 0 };
+        let t2 = { local: null, status: 'READY', pc: 0 };
+
+        const CODE_UNSAFE = [
+            "local_reg = read(shared)",
+            "local_reg = local_reg + 1",
+            "write(shared, local_reg)"
+        ];
+
+        const CODE_MUTEX = [
+            "lock(mutex)",
+            "local_reg = read(shared)",
+            "local_reg = local_reg + 1",
+            "write(shared, local_reg)",
+            "unlock(mutex)"
+        ];
+
+        // Fixed Script to guarantee we show the bug/fix perfectly
+        const SCRIPT_UNSAFE = [
+            { t: 1, action: "READ", msg: "T1 reads Shared (0) into local register." },
+            { t: 0, action: "SWITCH", msg: "[OS] Context Switch! Preempting T1." },
+            { t: 2, action: "READ", msg: "T2 reads Shared (0) into local register. (Both have stale data!)" },
+            { t: 1, action: "ADD", msg: "T1 increments local register (0 -> 1)." },
+            { t: 2, action: "ADD", msg: "T2 increments local register (0 -> 1)." },
+            { t: 1, action: "WRITE", msg: "T1 writes 1 to Shared RAM." },
+            { t: 2, action: "WRITE", msg: "T2 writes 1 to Shared RAM. T1's work is OVERWRITTEN! 💀" }
+        ];
+
+        const SCRIPT_MUTEX = [
+            { t: 1, action: "LOCK", msg: "T1 attempts to acquire Mutex -> SUCCESS." },
+            { t: 0, action: "SWITCH", msg: "[OS] Context Switch! Preempting T1." },
+            { t: 2, action: "LOCK", msg: "T2 attempts to acquire Mutex -> FAILED. T2 is BLOCKED." },
+            { t: 0, action: "SWITCH", msg: "[OS] T2 blocked. Switching back to T1." },
+            { t: 1, action: "READ", msg: "T1 reads Shared (0) into local register." },
+            { t: 1, action: "ADD", msg: "T1 increments local register (0 -> 1)." },
+            { t: 1, action: "WRITE", msg: "T1 writes 1 to Shared RAM." },
+            { t: 1, action: "UNLOCK", msg: "T1 releases Mutex. OS wakes up T2." },
+            { t: 2, action: "LOCK_WAKE", msg: "T2 wakes up and acquires Mutex -> SUCCESS." },
+            { t: 2, action: "READ", msg: "T2 reads Shared (1) into local register. (Safe!)" },
+            { t: 2, action: "ADD", msg: "T2 increments local register (1 -> 2)." },
+            { t: 2, action: "WRITE", msg: "T2 writes 2 to Shared RAM." },
+            { t: 2, action: "UNLOCK", msg: "T2 releases Mutex." }
+        ];
+
+        let currentScript = SCRIPT_UNSAFE;
+
+        const logContainer = document.getElementById('os-log');
+        const backBtn = document.getElementById('back-btn');
+        const tickBtn = document.getElementById('tick-btn');
+
+        function log(msg, type = "log-sys") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerText = `[STEP ${stepIdx}] ${msg}`;
+            logContainer.appendChild(p);
+            logContainer.scrollTop = logContainer.scrollHeight; 
+        }
+
+        // --- Core Controls ---
+        
+        function setMode(newMode) {
+            mode = newMode;
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Hide Mutex UI if unsafe
+            document.getElementById('mutex-ui').style.display = (mode === 'UNSAFE') ? 'none' : 'block';
+            
+            resetSim();
+        }
+
+        function resetSim() {
+            stepIdx = 0;
+            historyStack = [];
+            sharedCounter = 0;
+            mutex = { locked: false, owner: null };
+            t1 = { local: null, status: 'READY', pc: 0 };
+            t2 = { local: null, status: 'READY', pc: 0 };
+            currentScript = (mode === 'UNSAFE') ? SCRIPT_UNSAFE : SCRIPT_MUTEX;
+            
+            logContainer.innerHTML = '';
+            log(`System Restart. Mode: ${mode}`, "log-sys");
+            if (mode === 'UNSAFE') log("Goal: Show what happens when two threads run simultaneously without locks.", "log-warn");
+            else log("Goal: Show how Mutexes protect the Critical Section by blocking threads.", "log-warn");
+            
+            updateUI();
+        }
+
+        // --- State Management ---
+
+        function saveState() {
+            let snapshot = {
+                stepIdx, sharedCounter, 
+                mutex: JSON.parse(JSON.stringify(mutex)),
+                t1: JSON.parse(JSON.stringify(t1)),
+                t2: JSON.parse(JSON.stringify(t2)),
+                logHTML: logContainer.innerHTML
+            };
+            historyStack.push(snapshot);
+        }
+
+        function stepBack() {
+            if (historyStack.length === 0) return;
+            let p = historyStack.pop();
+            
+            stepIdx = p.stepIdx;
+            sharedCounter = p.sharedCounter;
+            mutex = p.mutex;
+            t1 = p.t1;
+            t2 = p.t2;
+            logContainer.innerHTML = p.logHTML;
+
+            updateUI();
+        }
+
+        // --- Execution Logic ---
+
+        function tickClock() {
+            if (stepIdx >= currentScript.length) return;
+            
+            saveState();
+            let cmd = currentScript[stepIdx];
+            stepIdx++;
+
+            let target = cmd.t === 1 ? t1 : t2;
+            let logType = cmd.t === 1 ? 'log-t1' : (cmd.t === 2 ? 'log-t2' : 'log-sys');
+
+            // Apply Action
+            if (cmd.action === "READ") {
+                target.local = sharedCounter;
+                target.status = 'RUNNING';
+                target.pc++;
+            } 
+            else if (cmd.action === "ADD") {
+                target.local++;
+                target.pc++;
+            }
+            else if (cmd.action === "WRITE") {
+                sharedCounter = target.local;
+                target.pc++;
+                if(mode === 'UNSAFE' && cmd.t === 2) target.status = 'DONE (Data Corrupted)';
+            }
+            else if (cmd.action === "LOCK") {
+                if (!mutex.locked) {
+                    mutex.locked = true;
+                    mutex.owner = cmd.t;
+                    target.status = 'RUNNING (Holds Lock)';
+                    target.pc++;
+                } else {
+                    target.status = 'BLOCKED (Waiting for Lock)';
+                }
+            }
+            else if (cmd.action === "LOCK_WAKE") {
+                mutex.locked = true;
+                mutex.owner = cmd.t;
+                target.status = 'RUNNING (Holds Lock)';
+                target.pc++; // Advance past lock
+            }
+            else if (cmd.action === "UNLOCK") {
+                mutex.locked = false;
+                mutex.owner = null;
+                target.status = 'DONE';
+                target.pc++;
+                // Unblock the other automatically for visuals
+                let other = cmd.t === 1 ? t2 : t1;
+                if (other.status.includes('BLOCKED')) other.status = 'READY (Unblocked)';
+            }
+            else if (cmd.action === "SWITCH") {
+                // Just log, UI handles it naturally
+            }
+
+            log(cmd.msg, logType);
+            updateUI();
+        }
+
+        // --- Render UI ---
+
+        function renderCode(threadObj, threadId) {
+            let codeArr = (mode === 'UNSAFE') ? CODE_UNSAFE : CODE_MUTEX;
+            let html = '';
+            for(let i=0; i<codeArr.length; i++) {
+                let cls = '';
+                if (i < threadObj.pc) cls = 'done';
+                if (i === threadObj.pc && !threadObj.status.includes('BLOCKED') && !threadObj.status.includes('DONE')) cls = 'active';
+                html += `<div class="code-line ${cls}">${codeArr[i]}</div>`;
+            }
+            document.getElementById(`t${threadId}-code`).innerHTML = html;
+        }
+
+        function updateUI() {
+            // Memory
+            document.getElementById('shared-val-ui').innerText = sharedCounter;
+            if (mode === 'MUTEX') {
+                let mUi = document.getElementById('mutex-ui');
+                if (mutex.locked) {
+                    mUi.className = "mutex-lock locked";
+                    mUi.innerText = `MUTEX: LOCKED BY T${mutex.owner}`;
+                } else {
+                    mUi.className = "mutex-lock unlocked";
+                    mUi.innerText = `MUTEX: UNLOCKED`;
+                }
+            }
+
+            // Threads
+            document.getElementById('t1-reg').innerText = t1.local === null ? '-' : t1.local;
+            document.getElementById('t1-status').innerText = `Status: ${t1.status}`;
+            document.getElementById('t1-ui').className = t1.status.includes('BLOCKED') ? 'thread-box t1 blocked' : 'thread-box t1';
+            renderCode(t1, 1);
+
+            document.getElementById('t2-reg').innerText = t2.local === null ? '-' : t2.local;
+            document.getElementById('t2-status').innerText = `Status: ${t2.status}`;
+            document.getElementById('t2-ui').className = t2.status.includes('BLOCKED') ? 'thread-box t2 blocked' : 'thread-box t2';
+            renderCode(t2, 2);
+
+            // Buttons
+            let isDone = stepIdx >= currentScript.length;
+            tickBtn.disabled = isDone;
+            tickBtn.innerText = isDone ? "Simulation Complete" : "Step CPU Scheduler ➔";
+            tickBtn.style.background = isDone ? "#e2e8f0" : "var(--hl-yellow)";
+            backBtn.disabled = historyStack.length === 0;
+
+            if (isDone && mode === 'UNSAFE') {
+                document.getElementById('shared-val-ui').style.color = "#ef4444";
+                document.getElementById('shared-val-ui').innerText += " (BUG!)";
+            } else {
+                document.getElementById('shared-val-ui').style.color = "var(--text-dark)";
+            }
+        }
+
+        // Initialize First Run
+        resetSim();
+    </script>
+</body>
+</html>

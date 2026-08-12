@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-sys | distributed caching</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+            
+            --c-client: #3b82f6; 
+            --c-app: #a855f7; 
+            --c-cache: #f59e0b;
+            --c-db: #10b981;
+            --c-danger: #ef4444;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards (Vertical) */
+        .theory-wrapper { margin-bottom: 20px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); padding: 15px 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.2rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px; text-transform: uppercase;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.9rem; margin: 0;}
+
+        /* Controls Panel */
+        .controls-panel { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 15px 20px;}
+        .control-section { display: flex; flex-direction: column; gap: 10px; padding-right: 20px;}
+        .control-section:not(:last-child) { border-right: 2px dashed #cbd5e1; }
+        .sec-label { font-weight: 900; color: var(--accent-purple); text-transform: uppercase; font-size: 0.85rem;}
+        .btn-row { display: flex; gap: 8px; flex-wrap: wrap;}
+
+        .ui-btn { 
+            background: var(--bg-color); border: 3px solid var(--text-dark); padding: 8px 12px; font-weight: 900; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 3px 3px 0 var(--text-dark); transition: all 0.1s; font-size: 0.8rem; text-transform: uppercase;
+        }
+        .ui-btn:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-rand { border-color: var(--c-client); color: var(--c-client); }
+        .btn-viral { background: var(--c-danger); color: white; border-color: var(--text-dark);}
+        .btn-auto { background: var(--hl-cyan); color: var(--text-dark);}
+        .btn-clear { background: var(--white); color: var(--c-danger); border-color: var(--c-danger);}
+
+        /* DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; align-items: start;}
+        
+        /* LEFT: NETWORK TOPOLOGY */
+        .network-container { background: #fdfcfa; border: 4px dashed var(--accent-purple); padding: 20px; height: 500px; position: relative; overflow: hidden;}
+        .zone-label { position: absolute; top: 10px; left: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 2px;}
+
+        .node { border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); position: absolute; display: flex; flex-direction: column; justify-content: center; align-items: center; background: var(--white); z-index: 10; transition: transform 0.1s;}
+        .node-icon { font-size: 2rem; margin-bottom: 5px; }
+        .node-label { font-weight: 900; text-transform: uppercase; font-size: 0.75rem; text-align: center; padding: 0 5px;}
+        .node-sub { font-family: var(--font-mono); font-size: 0.65rem; font-weight: bold; margin-top: 3px; color: #64748b;}
+        
+        /* Specific Nodes */
+        #node-client { width: 100px; height: 100px; top: 50%; left: 5%; transform: translateY(-50%); border-color: var(--c-client); }
+        #node-app { width: 120px; height: 120px; top: 50%; left: 35%; transform: translateY(-50%); border-color: var(--c-app); background: #faf5ff;}
+        
+        #node-cache { width: 140px; height: 100px; top: 15%; right: 10%; border-color: var(--c-cache); background: #fffbeb;}
+        #node-db { width: 140px; height: 100px; bottom: 15%; right: 10%; border-color: var(--c-db); background: #f0fdf4;}
+
+        /* Visual Cache Memory Box */
+        .cache-mem { position: absolute; top: 10%; right: 10px; font-family: var(--font-mono); font-size: 0.65rem; font-weight: bold; text-align: right;}
+        .cache-item { background: var(--white); border: 2px solid var(--text-dark); padding: 2px 5px; margin-bottom: 4px; display: inline-block;}
+
+        /* DB Load Bar */
+        .db-load-wrapper { position: absolute; bottom: -25px; left: -4px; width: 100%; border: 2px solid var(--text-dark); height: 12px; background: white;}
+        .db-load-fill { height: 100%; width: 0%; background: var(--c-db); transition: width 0.3s, background-color 0.3s;}
+
+        /* The Animated Packet */
+        .packet { 
+            position: absolute; width: 20px; height: 20px; border-radius: 50%;
+            border: 3px solid var(--white); background: var(--text-dark);
+            z-index: 20; transform: translate(-50%, -50%); opacity: 0; 
+            box-shadow: 2px 2px 0 rgba(0,0,0,0.5); pointer-events: none;
+            display: flex; justify-content: center; align-items: center; color: white; font-weight: 900; font-size: 0.65rem; font-family: var(--font-mono);
+        }
+
+        /* RIGHT: METRICS & LOGS */
+        .metrics-panel { display: flex; flex-direction: column; gap: 15px; }
+        
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .stat-box { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); padding: 15px; text-align: center; color: white;}
+        .stat-val { font-size: 2.5rem; font-weight: 900; color: var(--white); line-height: 1; font-family: var(--font-mono);}
+        .stat-sub { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-top: 5px;}
+        
+        #val-hits { color: var(--c-cache); }
+        #val-misses { color: var(--c-danger); }
+
+        .os-log-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); flex: 1; display: flex; flex-direction: column; height: 350px;}
+        .log-header { font-weight: 900; font-size: 0.9rem; text-transform: uppercase; padding: 10px; border-bottom: 3px solid var(--text-dark); background: #f8fafc;}
+        .os-log { font-family: var(--font-mono); font-size: 0.75rem; overflow-y: auto; padding: 15px; flex: 1; background: #0f172a; color: #cbd5e1; line-height: 1.4;}
+        .os-log p { margin: 4px 0; border-bottom: 1px dashed #334155; padding-bottom: 4px;}
+        
+        .log-req { color: #60a5fa; }
+        .log-hit { color: var(--hl-yellow); font-weight: bold; background: rgba(251, 191, 36, 0.1); padding: 2px;}
+        .log-miss { color: #fca5a5; font-weight: bold;}
+        .log-db { color: #34d399; font-style: italic;}
+        .log-warn { color: var(--c-danger); font-weight: bold; background: rgba(239, 68, 68, 0.1); padding: 4px; border-left: 4px solid var(--c-danger);}
+
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to system hub</a>
+        <h1>sys 04: distributed caching</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. The Hot Key Problem</h3>
+                    <p class="definition">Databases are too slow for viral content.</p>
+                    <ul>
+                        <li>Databases (like PostgreSQL or MySQL) read data from Physical Disks. This is slow and consumes heavy CPU resources.</li>
+                        <li>If millions of users request the same "Hot Key" (like a trending video ID), the database's Hard Drive queue fills up, causing a catastrophic failure.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. In-Memory Caches (Redis / Memcached)</h3>
+                    <p class="definition">RAM is 100x faster than Disk.</p>
+                    <ul>
+                        <li>We spin up a specialized server called a Distributed Cache. It stores simple Key-Value pairs entirely in RAM (Memory).</li>
+                        <li>It is lightning fast, but volatile and expensive. We cannot store the whole database here, only the most frequently accessed data.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. The Cache-Aside Pattern</h3>
+                    <p class="definition">The App Server acts as the traffic controller.</p>
+                    <ul>
+                        <li><strong>1. Check Cache:</strong> App Server asks Redis. If it's a <strong>Hit</strong>, return data instantly!</li>
+                        <li><strong>2. On Miss:</strong> App Server asks the Database.</li>
+                        <li><strong>3. Write Back:</strong> App Server gets data from the DB, saves a copy into the Cache, and returns it to the user. Next time, it will be a Hit!</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-panel">
+            <div class="control-section">
+                <div class="sec-label">1. Traffic Generator</div>
+                <div class="btn-row">
+                    <button class="ui-btn btn-rand" onclick="fireRequest('RANDOM')">🎲 Req Random Item</button>
+                    <button class="ui-btn btn-viral" onclick="fireSpike()">🔥 Req "Viral Tweet"</button>
+                </div>
+                <div class="btn-row" style="margin-top:5px;">
+                    <button class="ui-btn btn-auto" id="btn-auto" onclick="toggleAuto()">▶ Auto Traffic</button>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <div class="sec-label">2. Cache Operations</div>
+                <div class="btn-row">
+                    <button class="ui-btn btn-clear" onclick="clearCache()">🗑️ Purge Redis Cache</button>
+                </div>
+            </div>
+
+            <div class="control-section" style="border:none; padding-right:0;">
+                <div class="sec-label">Metrics</div>
+                <div style="font-family:var(--font-mono); font-size:1.5rem; font-weight:900; color:var(--accent-purple);" id="hit-rate">0%</div>
+                <div style="font-size:0.75rem; font-weight:bold; color:#64748b; text-transform:uppercase;">Hit Ratio</div>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="network-container" id="net-map">
+                <div class="zone-label">Application Topology</div>
+                
+                <div class="node" id="node-client">
+                    <div class="node-icon">📱</div>
+                    <div class="node-label">Users</div>
+                </div>
+
+                <div class="node" id="node-app">
+                    <div class="node-icon">⚙️</div>
+                    <div class="node-label">App Server</div>
+                    <div class="node-sub">Node.js / Java</div>
+                </div>
+
+                <div class="node" id="node-cache">
+                    <div class="node-icon">⚡</div>
+                    <div class="node-label">Redis Cache</div>
+                    <div class="node-sub">Memory (RAM)</div>
+                    <div class="cache-mem" id="cache-mem">
+                        </div>
+                </div>
+
+                <div class="node" id="node-db">
+                    <div class="node-icon">🗄️</div>
+                    <div class="node-label">PostgreSQL</div>
+                    <div class="node-sub">Disk (SSD)</div>
+                    <div class="db-load-wrapper">
+                        <div class="db-load-fill" id="db-load"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="metrics-panel">
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <div class="stat-val" id="val-hits">0</div>
+                        <div class="stat-sub">Cache Hits</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-val" id="val-misses">0</div>
+                        <div class="stat-sub">Cache Misses / DB Queries</div>
+                    </div>
+                </div>
+
+                <div class="os-log-box">
+                    <div class="log-header">App Server Event Log</div>
+                    <div class="os-log" id="os-log">
+                        <p style="color:#64748b;">[App Server Online. Redis Cache Empty.]</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- STATE ---
+        let cacheMemory = []; // Max 4 items to simulate eviction
+        const MAX_CACHE_SIZE = 4;
+        let stats = { hits: 0, misses: 0, total: 0 };
+        let dbLoad = 0; // percentage
+        
+        let isAnimating = false;
+        let autoInterval = null;
+
+        const DATA_ITEMS = ['A', 'B', 'C', 'D', 'E', 'F'];
+        const VIRAL_ITEM = '🔥';
+
+        // --- DOM ELEMENTS ---
+        const mapUI = document.getElementById('net-map');
+        const logUI = document.getElementById('os-log');
+        const cacheMemUI = document.getElementById('cache-mem');
+        const dbLoadUI = document.getElementById('db-load');
+        
+        const nClient = document.getElementById('node-client');
+        const nApp = document.getElementById('node-app');
+        const nCache = document.getElementById('node-cache');
+        const nDb = document.getElementById('node-db');
+
+        // --- LOGIC ---
+        function addLog(msg, type="log-req") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerHTML = msg;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight;
+        }
+
+        function updateMetrics() {
+            document.getElementById('val-hits').innerText = stats.hits;
+            document.getElementById('val-misses').innerText = stats.misses;
+            
+            let ratio = stats.total === 0 ? 0 : Math.round((stats.hits / stats.total) * 100);
+            document.getElementById('hit-rate').innerText = ratio + "%";
+        }
+
+        function updateCacheUI() {
+            cacheMemUI.innerHTML = cacheMemory.map(item => `<div class="cache-item">Key_${item}</div>`).join('');
+        }
+
+        function clearCache() {
+            cacheMemory = [];
+            updateCacheUI();
+            addLog(`[REDIS] Cache purged manually. All data erased from RAM.`, "log-warn");
+        }
+
+        // DB Load Decay loop
+        setInterval(() => {
+            if(dbLoad > 0) {
+                dbLoad = Math.max(0, dbLoad - 5); // Cool down fast
+                dbLoadUI.style.width = `${dbLoad}%`;
+                
+                if (dbLoad < 80) {
+                    nDb.style.animation = "";
+                    dbLoadUI.style.backgroundColor = "var(--c-db)";
+                }
+            }
+        }, 200);
+
+        function triggerDbLoad() {
+            dbLoad = Math.min(100, dbLoad + 35); // Misses cause huge spikes
+            dbLoadUI.style.width = `${dbLoad}%`;
+            if(dbLoad >= 80) {
+                nDb.style.animation = "shake 0.3s infinite";
+                dbLoadUI.style.backgroundColor = "var(--c-danger)";
+                addLog(`[DB ALERT] PostgreSQL load critical! Hard drive I/O maxing out!`, "log-warn");
+            }
+        }
+
+        async function fireRequest(type) {
+            if (isAnimating && type !== 'VIRAL') return; // Allow spamming viral button
+            isAnimating = true;
+
+            let reqItem = type === 'RANDOM' ? DATA_ITEMS[Math.floor(Math.random() * DATA_ITEMS.length)] : VIRAL_ITEM;
+            stats.total++;
+
+            // 1. Client to App
+            addLog(`[CLIENT] Requesting Data: ${reqItem}`);
+            animatePacket(nClient, nApp, 300, reqItem, "var(--c-client)");
+            await new Promise(r => setTimeout(r, 300));
+
+            // 2. App to Cache (Check)
+            addLog(`[APP] Checking Redis cache for Key_${reqItem}...`);
+            animatePacket(nApp, nCache, 300, "?", "var(--c-app)");
+            await new Promise(r => setTimeout(r, 300));
+
+            if (cacheMemory.includes(reqItem)) {
+                // --- CACHE HIT ---
+                stats.hits++;
+                addLog(`[REDIS] CACHE HIT! Found Key_${reqItem} in RAM.`, "log-hit");
+                updateMetrics();
+
+                // Cache to App
+                animatePacket(nCache, nApp, 300, reqItem, "var(--c-cache)");
+                await new Promise(r => setTimeout(r, 300));
+
+            } else {
+                // --- CACHE MISS ---
+                stats.misses++;
+                addLog(`[REDIS] CACHE MISS. Key_${reqItem} not found.`, "log-miss");
+                updateMetrics();
+
+                // Cache says no to App
+                animatePacket(nCache, nApp, 300, "X", "var(--c-danger)");
+                await new Promise(r => setTimeout(r, 300));
+
+                // App queries DB
+                addLog(`[APP] Querying PostgreSQL Database for Key_${reqItem}...`, "log-db");
+                animatePacket(nApp, nDb, 400, "Q", "var(--c-app)");
+                await new Promise(r => setTimeout(r, 400));
+                
+                triggerDbLoad();
+
+                // DB to App
+                animatePacket(nDb, nApp, 400, reqItem, "var(--c-db)");
+                await new Promise(r => setTimeout(r, 400));
+
+                // App writes back to Cache
+                addLog(`[APP] Writing Key_${reqItem} to Redis for next time.`, "log-db");
+                animatePacket(nApp, nCache, 300, "W", "var(--c-app)");
+                
+                // Eviction logic
+                if(!cacheMemory.includes(reqItem)) {
+                    if(cacheMemory.length >= MAX_CACHE_SIZE) cacheMemory.shift(); // Evict oldest
+                    cacheMemory.push(reqItem);
+                    updateCacheUI();
+                }
+                await new Promise(r => setTimeout(r, 300));
+            }
+
+            // 3. App to Client (Return Data)
+            animatePacket(nApp, nClient, 300, reqItem, "var(--text-dark)");
+            await new Promise(r => setTimeout(r, 300));
+
+            isAnimating = false;
+        }
+
+        function fireSpike() {
+            let count = 0;
+            let spikeInt = setInterval(() => {
+                fireRequest('VIRAL');
+                count++;
+                if(count >= 15) clearInterval(spikeInt);
+            }, 100);
+        }
+
+        function toggleAuto() {
+            const btn = document.getElementById('btn-auto');
+            if(autoInterval) {
+                clearInterval(autoInterval);
+                autoInterval = null;
+                btn.innerText = "▶ Auto Traffic";
+                btn.style.background = "var(--hl-cyan)";
+            } else {
+                btn.innerText = "⏸ Stop Traffic";
+                btn.style.background = "#f59e0b";
+                autoInterval = setInterval(() => {
+                    fireRequest('RANDOM');
+                }, 1500); // Slower to let animations finish
+            }
+        }
+
+        // --- ANIMATION HELPER ---
+        function getCenterCoords(element) {
+            if(!element) return {x:0, y:0};
+            const mapRect = mapUI.getBoundingClientRect();
+            const elRect = element.getBoundingClientRect();
+            return {
+                x: (elRect.left - mapRect.left) + (elRect.width / 2),
+                y: (elRect.top - mapRect.top) + (elRect.height / 2)
+            };
+        }
+
+        function animatePacket(fromEl, toEl, durationMs, label, color) {
+            if(!fromEl || !toEl) return;
+            const start = getCenterCoords(fromEl);
+            const end = getCenterCoords(toEl);
+
+            const pkt = document.createElement('div');
+            pkt.className = `packet`;
+            pkt.style.backgroundColor = color;
+            pkt.innerText = label;
+            mapUI.appendChild(pkt);
+
+            pkt.style.left = `${start.x}px`;
+            pkt.style.top = `${start.y}px`;
+            pkt.style.opacity = '1';
+            
+            void pkt.offsetWidth; // Force reflow
+
+            pkt.style.transition = `all ${durationMs}ms ease-in-out`;
+            pkt.style.left = `${end.x}px`;
+            pkt.style.top = `${end.y}px`;
+
+            setTimeout(() => {
+                pkt.remove();
+                toEl.style.transform = "scale(1.05)";
+                setTimeout(() => toEl.style.transform = "scale(1)", 100);
+            }, durationMs);
+        }
+
+    </script>
+</body>
+</html>

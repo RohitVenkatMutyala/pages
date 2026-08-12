@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | file systems</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 40px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { font-size: 3rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.3rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.95rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.95rem; margin: 0;}
+        .theory-card li { margin-bottom: 6px; }
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 12px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase; font-size: 0.85rem;
+        }
+        .ui-btn:hover:not(:disabled) { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-create { background: var(--hl-cyan); }
+        .btn-defrag { background: var(--accent-purple); color: white; }
+        .reset-btn { background: #ef4444; color: var(--white); }
+
+        /* Dashboard Layout */
+        .dashboard { display: grid; grid-template-columns: 2.5fr 1fr; gap: 20px; }
+        .box { background: var(--white); border: 4px solid var(--text-dark); padding: 20px; box-shadow: 8px 8px 0 var(--text-dark); border-radius: 4px; }
+        
+        /* Universal Canvas */
+        .sim-canvas { position: relative; width: 100%; min-height: 480px; display: flex; justify-content: space-around; align-items: flex-start; background: #fdfcfa; border: 4px dashed var(--accent-purple); padding: 20px; box-sizing: border-box; flex-wrap: wrap; gap: 20px;}
+        
+        /* Storage Modules */
+        .module-header { font-weight: 900; font-size: 1.1rem; text-transform: uppercase; background: var(--text-dark); color: var(--white); padding: 5px 15px; width: 100%; text-align: center; box-sizing: border-box; border: 3px solid var(--text-dark); margin-bottom: 10px;}
+        
+        /* Disk Grid */
+        .disk-container { display: flex; flex-direction: column; align-items: center; width: 340px;}
+        .disk-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; background: #e2e8f0; padding: 10px; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); width: 100%; box-sizing: border-box;}
+        .block { width: 100%; aspect-ratio: 1/1; background: var(--white); border: 2px solid #94a3b8; display: flex; justify-content: center; align-items: center; font-size: 0.7rem; font-family: var(--font-mono); font-weight: bold; color: rgba(0,0,0,0.5); transition: all 0.2s;}
+        .block.used { border-color: var(--text-dark); color: var(--text-dark); box-shadow: inset 0 0 10px rgba(0,0,0,0.1);}
+        .block.reading { transform: scale(1.2); box-shadow: 0 0 15px var(--hl-yellow); border-color: var(--text-dark); z-index: 10;}
+        
+        /* Inode Table */
+        .inode-container { flex: 1; min-width: 250px; display: flex; flex-direction: column;}
+        .inode-list { border: 4px solid var(--text-dark); background: var(--white); box-shadow: 6px 6px 0 var(--text-dark); min-height: 200px; padding: 10px; display: flex; flex-direction: column; gap: 8px; flex: 1;}
+        .inode-row { display: flex; justify-content: space-between; align-items: center; border: 2px solid var(--text-dark); padding: 8px; font-family: var(--font-mono); font-size: 0.85rem; background: #f8fafc; transition: all 0.2s;}
+        .inode-row:hover { transform: translateX(-4px); box-shadow: 4px 4px 0 var(--text-dark); border-color: var(--accent-purple);}
+        .inode-color-box { width: 15px; height: 15px; border: 2px solid var(--text-dark); display: inline-block; vertical-align: middle; margin-right: 5px;}
+        .inode-actions { display: flex; gap: 5px;}
+        .inode-btn { padding: 2px 6px; font-size: 0.7rem; font-weight: bold; cursor: pointer; border: 2px solid var(--text-dark); background: var(--white);}
+        .inode-btn.read { background: var(--hl-cyan); }
+        .inode-btn.del { background: #fca5a5; }
+
+        /* RAM Visualization */
+        .ram-container { width: 100%; display: flex; flex-direction: column; margin-top: 10px;}
+        .ram-grid { display: flex; gap: 5px; background: #dcfce7; padding: 15px; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); min-height: 50px; flex-wrap: wrap; align-items: center;}
+        .ram-block { width: 40px; height: 40px; background: var(--white); border: 2px dashed #166534; display: flex; justify-content: center; align-items: center; font-weight: bold; font-family: var(--font-mono); animation: popIn 0.3s ease-out;}
+
+        /* OS Terminal */
+        .os-log { background: #1e293b; color: #38bdf8; font-family: var(--font-mono); padding: 15px; height: 500px; overflow-y: auto; font-size: 0.85rem; border: 4px solid var(--text-dark); box-shadow: 8px 8px 0 var(--text-dark); }
+        .os-log p { margin: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;}
+        .log-sys { color: #f43f5e; font-weight: bold; }
+        .log-warn { color: #fbbf24; font-weight: bold; }
+        .log-success { color: #a3e635; font-weight: bold; }
+        .log-action { color: #cbd5e1; }
+
+        @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        
+        /* File Colors */
+        .f-red { background-color: #ef4444; } .f-blue { background-color: #3b82f6; } .f-green { background-color: #10b981; }
+        .f-yellow { background-color: #f59e0b; } .f-purple { background-color: #8b5cf6; } .f-pink { background-color: #ec4899; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1>file systems & storage</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. Scattered Storage</h3>
+                    <p class="definition">The OS rarely saves files in a perfect sequence.</p>
+                    <ul>
+                        <li>When you save a file, the OS finds <em>any</em> available empty blocks on the Hard Drive.</li>
+                        <li>A single image might be shattered across Block 2, Block 45, and Block 60. This is called <strong>Fragmentation</strong>.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. Linked Lists vs Inodes</h3>
+                    <p class="definition">How does the OS remember where the scattered pieces are?</p>
+                    <ul>
+                        <li><strong>Linked Allocation (FAT32):</strong> Block 2 contains data + a pointer to Block 45. Block 45 points to 60. You must traverse them sequentially like a Linked List.</li>
+                        <li><strong>Indexed Allocation (Inodes - Linux):</strong> The OS creates a central "Index Node" containing an array of all pointers <code>[2, 45, 60]</code>. Much faster for random access!</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. Loading to RAM</h3>
+                    <p class="definition">The Hard Drive is permanent but slow. RAM is volatile but fast.</p>
+                    <ul>
+                        <li>To open a file, the OS reads the Inode, hunts down every scattered physical block on the disk, and copies the data into continuous, sequential memory in the <strong>RAM</strong> so the CPU can process it.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <strong style="text-transform: uppercase; color: var(--accent-purple);">Disk Operations:</strong>
+                <button class="ui-btn btn-create" onclick="createFile('doc.txt', 3)" id="btn-c1">+ Save doc.txt (3)</button>
+                <button class="ui-btn btn-create" onclick="createFile('image.png', 5)" id="btn-c2">+ Save image.png (5)</button>
+                <button class="ui-btn btn-create" onclick="createFile('game.exe', 8)" id="btn-c3">+ Save game.exe (8)</button>
+                <button class="ui-btn btn-defrag" onclick="defragDisk()" id="btn-defrag">⚙️ Defrag Disk</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn reset-btn" onclick="resetSim()" id="btn-reset">↺ Format Disk</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <div class="box" style="background: transparent; border: none; box-shadow: none; padding: 0;">
+                
+                <div class="sim-canvas">
+                    <div class="disk-container">
+                        <div class="module-header">Hard Drive (Permanent)</div>
+                        <div class="disk-grid" id="disk-grid"></div>
+                    </div>
+                    
+                    <div class="inode-container">
+                        <div class="module-header" style="background: var(--accent-purple);">OS Inode Table (Pointers)</div>
+                        <div class="inode-list" id="inode-list"></div>
+                    </div>
+
+                    <div class="ram-container">
+                        <div class="module-header" style="background: #166534;">RAM (Volatile Memory)</div>
+                        <div class="ram-grid" id="ram-grid">
+                            <span style="color: #166534; font-weight: bold; width:100%; text-align:center; opacity:0.6;">Waiting for OS to load a file...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="os-log" id="os-log"></div>
+        </div>
+
+    </div>
+
+    <script>
+        // System State
+        const DISK_SIZE = 64;
+        let disk = Array(DISK_SIZE).fill(null); 
+        let inodes = [];
+        let fileCounter = 1;
+        let isReading = false;
+
+        const COLORS = ['f-red', 'f-blue', 'f-green', 'f-yellow', 'f-purple', 'f-pink', 'f-cyan'];
+
+        const logContainer = document.getElementById('os-log');
+        const diskGrid = document.getElementById('disk-grid');
+        const inodeList = document.getElementById('inode-list');
+        const ramGrid = document.getElementById('ram-grid');
+
+        function log(msg, type = "log-action") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerText = `[SYS] ${msg}`;
+            logContainer.appendChild(p);
+            logContainer.scrollTop = logContainer.scrollHeight; 
+        }
+
+        // --- Core Functions ---
+        function resetSim() {
+            if(isReading) return;
+            disk = Array(DISK_SIZE).fill(null);
+            inodes = [];
+            fileCounter = 1;
+            ramGrid.innerHTML = `<span style="color: #166534; font-weight: bold; width:100%; text-align:center; opacity:0.6;">Waiting for OS to load a file...</span>`;
+            
+            logContainer.innerHTML = '';
+            log(`Disk Formatted. 64 Blocks Free. File System Ready.`, "log-sys");
+            updateUI();
+        }
+
+        // --- File System Operations ---
+        function createFile(baseName, size) {
+            if(isReading) return;
+            
+            let freeBlocks = [];
+            for(let i=0; i<DISK_SIZE; i++) { if(!disk[i]) freeBlocks.push(i); }
+
+            if(freeBlocks.length < size) {
+                log(`ERROR: Disk Full. Requires ${size} blocks, only ${freeBlocks.length} available.`, "log-warn");
+                return;
+            }
+
+            // SIMULATE REAL FRAGMENTATION: Randomly pick blocks from the free pool
+            let allocated = [];
+            for(let i=0; i<size; i++) {
+                let randIdx = Math.floor(Math.random() * freeBlocks.length);
+                allocated.push(freeBlocks.splice(randIdx, 1)[0]);
+            }
+
+            // Sort them numerically just so the Inode table looks clean, 
+            // but they will still be physically scattered on the grid.
+            allocated.sort((a,b) => a - b); 
+
+            let fileId = 'F' + fileCounter;
+            let fileName = `${baseName.split('.')[0]}_${fileCounter}.${baseName.split('.')[1]}`;
+            let colorClass = COLORS[fileCounter % COLORS.length];
+            fileCounter++;
+
+            // Write to Disk Array
+            allocated.forEach(b => disk[b] = fileId);
+
+            // Create OS Inode
+            inodes.push({ id: fileId, name: fileName, size: size, blocks: allocated, color: colorClass });
+
+            // Detect Fragmentation for logging
+            let isContiguous = true;
+            for(let i=1; i<allocated.length; i++) {
+                if(allocated[i] !== allocated[i-1] + 1) isContiguous = false;
+            }
+            
+            let logType = isContiguous ? "log-success" : "log-warn";
+            let fragMsg = isContiguous ? "" : " (FRAGMENTED)";
+
+            log(`Saved ${fileName} (${size} blk). Pointers: [${allocated.join(', ')}]${fragMsg}`, logType);
+            updateUI();
+        }
+
+        function deleteFile(fileId) {
+            if(isReading) return;
+            
+            let inodeIdx = inodes.findIndex(i => i.id === fileId);
+            if(inodeIdx === -1) return;
+            
+            let inode = inodes[inodeIdx];
+            inode.blocks.forEach(b => disk[b] = null); // Free physical blocks
+            
+            log(`Deleted ${inode.name}. Freed ${inode.size} blocks. Created disk holes.`, "log-sys");
+            inodes.splice(inodeIdx, 1); // Delete Inode
+            
+            // Clear RAM if we deleted the currently viewed file
+            ramGrid.innerHTML = `<span style="color: #166534; font-weight: bold; width:100%; text-align:center; opacity:0.6;">Waiting for OS to load a file...</span>`;
+            updateUI();
+        }
+
+        function defragDisk() {
+            if(isReading || inodes.length === 0) return;
+            
+            let newDisk = Array(DISK_SIZE).fill(null);
+            let currentBlockIdx = 0;
+            
+            // Re-write all files contiguously
+            inodes.forEach(inode => {
+                let newBlocks = [];
+                for(let i=0; i<inode.size; i++) {
+                    newDisk[currentBlockIdx] = inode.id;
+                    newBlocks.push(currentBlockIdx);
+                    currentBlockIdx++;
+                }
+                inode.blocks = newBlocks; 
+            });
+            
+            disk = newDisk;
+            log(`Defragmentation Complete. All files reorganized sequentially. OS Read speeds restored.`, "log-success");
+            updateUI();
+        }
+
+        // --- READ ANIMATION (DISK TO RAM) ---
+        function readFileToRAM(fileId) {
+            if(isReading) return;
+            
+            let inode = inodes.find(i => i.id === fileId);
+            if(!inode) return;
+
+            isReading = true;
+            toggleButtons(true);
+            ramGrid.innerHTML = ''; // Clear RAM
+            
+            log(`-----------------------------------`);
+            log(`OS requested ${inode.name}. Consulting Inode...`, "log-sys");
+            log(`Inode Pointer Array: [${inode.blocks.join(', ')}]`, "log-action");
+            
+            let ptrIndex = 0;
+
+            // Sequential Interval to simulate Disk Head jumping around
+            let readInterval = setInterval(() => {
+                // Clear previous highlight
+                document.querySelectorAll('.block').forEach(b => b.classList.remove('reading'));
+
+                if(ptrIndex >= inode.blocks.length) {
+                    // Done reading
+                    clearInterval(readInterval);
+                    log(`File completely reconstructed in RAM. Ready for CPU.`, "log-success");
+                    isReading = false;
+                    toggleButtons(false);
+                    updateUI(); // Resets specific visual states
+                    return;
+                }
+
+                // Highlight current block on disk
+                let physicalBlock = inode.blocks[ptrIndex];
+                let diskDiv = document.getElementById(`block-${physicalBlock}`);
+                if(diskDiv) diskDiv.classList.add('reading');
+
+                // Move data to RAM
+                log(`Disk Arm jumped to Block ${physicalBlock}. Extracting data...`, "log-action");
+                
+                let ramSlot = document.createElement('div');
+                ramSlot.className = `ram-block ${inode.color} used`;
+                ramSlot.innerText = physicalBlock;
+                ramGrid.appendChild(ramSlot);
+
+                ptrIndex++;
+            }, 600); // 600ms per block read
+        }
+
+        function toggleButtons(disabled) {
+            document.getElementById('btn-c1').disabled = disabled;
+            document.getElementById('btn-c2').disabled = disabled;
+            document.getElementById('btn-c3').disabled = disabled;
+            document.getElementById('btn-defrag').disabled = disabled;
+            document.getElementById('btn-reset').disabled = disabled;
+            document.querySelectorAll('.inode-btn').forEach(b => b.disabled = disabled);
+        }
+
+        // --- UI Rendering ---
+        function updateUI() {
+            // Render Disk Grid
+            diskGrid.innerHTML = '';
+            for(let i=0; i<DISK_SIZE; i++) {
+                let blockId = disk[i];
+                let div = document.createElement('div');
+                div.id = `block-${i}`;
+                
+                if (blockId) {
+                    let inode = inodes.find(n => n.id === blockId);
+                    div.className = `block used ${inode ? inode.color : ''}`;
+                    div.innerText = i; 
+                } else {
+                    div.className = `block`;
+                    div.innerText = i;
+                }
+                diskGrid.appendChild(div);
+            }
+
+            // Render Inode Table
+            inodeList.innerHTML = '';
+            if (inodes.length === 0) {
+                inodeList.innerHTML = `<div style="text-align:center; color:#94a3b8; font-weight:bold; margin-top:20px;">No Files Found</div>`;
+            } else {
+                for(let i = inodes.length - 1; i >= 0; i--) {
+                    let inode = inodes[i];
+                    let row = document.createElement('div');
+                    row.className = 'inode-row';
+                    
+                    row.innerHTML = `
+                        <div style="display:flex; align-items:center;">
+                            <div class="inode-color-box ${inode.color}"></div>
+                            <div>
+                                <strong>${inode.name}</strong><br>
+                                <span style="font-size:0.75rem; color:#64748b;">Ptrs: [${inode.blocks.join(',')}]</span>
+                            </div>
+                        </div>
+                        <div class="inode-actions">
+                            <button class="inode-btn read" onclick="readFileToRAM('${inode.id}')">LOAD</button>
+                            <button class="inode-btn del" onclick="deleteFile('${inode.id}')">DEL</button>
+                        </div>
+                    `;
+                    inodeList.appendChild(row);
+                }
+            }
+        }
+
+        // Initialize First Run
+        resetSim();
+    </script>
+</body>
+</html>

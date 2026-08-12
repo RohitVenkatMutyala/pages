@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | operating systems</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --font-sans: 'Inter', sans-serif;
+        }
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); padding: 40px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { border-bottom: 5px solid var(--text-dark); padding-bottom: 20px; margin-bottom: 40px; }
+        h1 { font-size: 3rem; font-weight: 900; margin: 0; color: var(--accent-purple); text-transform: lowercase; }
+        .module-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+        .card { 
+            background: var(--white); border: 4px solid var(--text-dark); padding: 20px; 
+            box-shadow: 6px 6px 0 var(--text-dark); text-decoration: none; color: inherit; transition: 0.2s;
+        }
+        .card:hover { transform: translate(-3px, -3px); box-shadow: 10px 10px 0 var(--accent-purple); }
+        .tag { display: inline-block; padding: 2px 8px; font-size: 0.7rem; font-weight: 900; border: 2px solid var(--text-dark); margin-bottom: 10px; background: #fecaca; }
+        .title { font-size: 1.3rem; font-weight: 900; margin-bottom: 10px; }
+        .desc { font-size: 0.85rem; color: #475569; margin-bottom: 15px; }
+        .btn { background: var(--hl-yellow); padding: 8px; text-align: center; font-weight: 900; font-size: 0.8rem; border: 2px solid var(--text-dark); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>viz-os</h1>
+            <p><strong>Operating Systems Visual Curriculum</strong></p>
+        </header>
+        <div class="module-grid">
+            <a href="boundary.html" class="card"><div class="tag">KERNEL</div><div class="title">The Boundary</div><p class="desc">User vs Kernel mode and System Calls.</p><div class="btn">LAUNCH</div></a>
+            <a href="process.html" class="card"><div class="tag">PROCESS</div><div class="title">Process Lifecycle</div><p class="desc">The 5-state transitions: Ready, Running, etc.</p><div class="btn">LAUNCH</div></a>
+            <a href="fork.html" class="card"><div class="tag">PROCESS</div><div class="title">Fork & Exec</div><p class="desc">Cloning and replacing process images.</p><div class="btn">LAUNCH</div></a>
+            <a href="scheduler.html" class="card"><div class="tag">SCHEDULING</div><div class="title">CPU Scheduler</div><p class="desc">FCFS, Round Robin, and SJF algorithms.</p><div class="btn">LAUNCH</div></a>
+            <a href="concurrency.html" class="card"><div class="tag">SYNC</div><div class="title">Concurrency</div><p class="desc">Mutexes, Semaphores, and Race Conditions.</p><div class="btn">LAUNCH</div></a>
+            <a href="deadlock.html" class="card"><div class="tag">SYNC</div><div class="title">Deadlock</div><p class="desc">Visualizing Circular Wait and Banker's Algorithm.</p><div class="btn">LAUNCH</div></a>
+            <a href="fs.html" class="card"><div class="tag">STORAGE</div><div class="title">File Systems</div><p class="desc">Inodes and directory tree structures.</p><div class="btn">LAUNCH</div></a>
+            <a href="chrome.html" class="card"><div class="tag">PROJECT</div><div class="title">Chrome Arch</div><p class="desc">Multi-process browser architecture.</p><div class="btn">LAUNCH</div></a>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-sys | database scaling</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+            
+            --c-read: #3b82f6;   /* Blue for Reads */
+            --c-write: #ef4444;  /* Red for Writes */
+            --c-sync: #a855f7;   /* Purple for Syncs */
+            --c-db: #10b981;     /* Green for Database */
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards (Strictly Vertical) */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); padding: 15px 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.1rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px; text-transform: uppercase;}
+        .theory-card .use-case { display: inline-block; background: #fef3c7; color: #b45309; font-weight: 900; font-size: 0.75rem; padding: 4px 8px; border: 2px solid #b45309; margin-bottom: 10px; text-transform: uppercase;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.85rem; margin: 0;}
+
+        /* Controls Panel */
+        .controls-panel { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 20px; padding: 15px 20px;}
+        .control-section { display: flex; flex-direction: column; gap: 10px; padding-right: 20px;}
+        .control-section:not(:last-child) { border-right: 2px dashed #cbd5e1; }
+        .sec-label { font-weight: 900; color: var(--accent-purple); text-transform: uppercase; font-size: 0.85rem;}
+        .btn-row { display: flex; gap: 8px; flex-wrap: wrap;}
+
+        .ui-btn { 
+            background: var(--bg-color); border: 3px solid var(--text-dark); padding: 8px 15px; font-weight: 900; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 3px 3px 0 var(--text-dark); transition: all 0.1s; font-size: 0.8rem; text-transform: uppercase;
+        }
+        .ui-btn:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-read { border-color: var(--c-read); color: var(--c-read); }
+        .btn-write { border-color: var(--c-write); color: var(--c-write); }
+        .btn-spike { background: var(--text-dark); color: white;}
+        .btn-reset { background: #fca5a5; color: var(--text-dark);}
+        
+        .arch-select { font-family: var(--font-mono); font-size: 1rem; font-weight: bold; border: 3px solid var(--text-dark); padding: 8px; width: 100%; cursor: pointer; background: var(--hl-yellow);}
+
+        /* DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; align-items: start;}
+        
+        /* LEFT: NETWORK TOPOLOGY */
+        .network-container { background: #fdfcfa; border: 4px dashed var(--accent-purple); padding: 20px; height: 500px; position: relative; overflow: hidden;}
+        .zone-label { position: absolute; top: 10px; left: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 2px;}
+
+        .node { border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); position: absolute; display: flex; flex-direction: column; justify-content: center; align-items: center; background: var(--white); z-index: 10; transition: all 0.3s;}
+        .node-icon { font-size: 2rem; margin-bottom: 5px; }
+        .node-label { font-weight: 900; text-transform: uppercase; font-size: 0.75rem; text-align: center; padding: 0 5px;}
+        .node-sub { font-family: var(--font-mono); font-size: 0.65rem; font-weight: bold; margin-top: 3px;}
+        
+        /* Fixed Nodes */
+        #node-client { width: 100px; height: 100px; top: 50%; left: 5%; transform: translateY(-50%); border-color: var(--text-dark); }
+        #node-proxy { width: 120px; height: 120px; top: 50%; left: 30%; transform: translateY(-50%); border-color: var(--hl-cyan); background: #f0f9ff;}
+        
+        /* Database Nodes Area */
+        .db-pool { position: absolute; right: 5%; top: 5%; bottom: 5%; width: 250px; display: flex; flex-direction: column; justify-content: space-around; align-items: center;}
+        
+        .db-node { width: 100%; height: 90px; border: 4px solid var(--c-db); box-shadow: 4px 4px 0 var(--text-dark); background: var(--white); position: relative; display: flex; flex-direction: column; padding: 10px; box-sizing: border-box; transition: all 0.3s;}
+        .db-node.highlight { transform: scale(1.05); z-index: 15; box-shadow: 0 0 15px var(--hl-yellow);}
+        
+        /* Architecture specific styling */
+        .arch-replication #db-1 { border-color: var(--c-write); background: #fef2f2; } /* Primary */
+        .arch-replication #db-2, .arch-replication #db-3 { border-color: var(--c-read); background: #eff6ff;} /* Replicas */
+        
+        .arch-sharding .db-node { border-color: var(--c-db); background: #f0fdf4; } /* Shards all equal */
+
+        .db-header { display: flex; justify-content: space-between; font-weight: 900; font-size: 0.85rem; text-transform: uppercase; margin-bottom: 5px; border-bottom: 2px solid var(--text-dark); padding-bottom: 5px;}
+        .db-stats { font-family: var(--font-mono); font-size: 0.75rem; display: flex; justify-content: space-between; margin-top: 5px; color: #475569; font-weight: bold;}
+
+        /* The Animated Packet */
+        .packet { 
+            position: absolute; width: 18px; height: 18px; border-radius: 50%;
+            border: 3px solid var(--white); background: var(--text-dark);
+            z-index: 20; transform: translate(-50%, -50%); opacity: 0; 
+            box-shadow: 2px 2px 0 rgba(0,0,0,0.5); pointer-events: none;
+            display: flex; justify-content: center; align-items: center; font-size: 0.6rem; font-weight: bold; color: white;
+        }
+        .pkt-read { background: var(--c-read); }
+        .pkt-write { background: var(--c-write); }
+        .pkt-sync { background: var(--c-sync); width: 12px; height: 12px; border-width: 2px;}
+
+        /* RIGHT: METRICS & LOGS */
+        .metrics-panel { display: flex; flex-direction: column; gap: 15px; }
+        
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .stat-box { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); padding: 15px; text-align: center; color: white;}
+        .stat-val { font-size: 2.5rem; font-weight: 900; color: var(--white); line-height: 1; font-family: var(--font-mono);}
+        .stat-sub { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-top: 5px;}
+        
+        #val-reads { color: var(--c-read); }
+        #val-writes { color: var(--c-write); }
+
+        .os-log-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); flex: 1; display: flex; flex-direction: column; height: 350px;}
+        .log-header { font-weight: 900; font-size: 0.9rem; text-transform: uppercase; padding: 10px; border-bottom: 3px solid var(--text-dark); background: #f8fafc;}
+        .os-log { font-family: var(--font-mono); font-size: 0.75rem; overflow-y: auto; padding: 15px; flex: 1; background: #0f172a; color: #cbd5e1; line-height: 1.4;}
+        .os-log p { margin: 4px 0; border-bottom: 1px dashed #334155; padding-bottom: 4px;}
+        
+        .log-read { color: #93c5fd; }
+        .log-write { color: #fca5a5; font-weight: bold;}
+        .log-sync { color: #d8b4fe; font-style: italic;}
+        .log-arch { color: var(--hl-yellow); font-weight: bold; text-transform: uppercase;}
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to system hub</a>
+        <h1>sys 03: database scaling</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. The Database Bottleneck</h3>
+                    <p class="definition">Unlike stateless web servers, you can't just copy and paste a database blindly.</p>
+                    <ul>
+                        <li>If Server A writes data to DB 1, and Server B tries to read it from DB 2, the data is missing! Databases must remain perfectly synchronized, making them the hardest part of any system to scale.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. Master-Slave Replication</h3>
+                    <div class="use-case">Ideal for: Read-Heavy applications (Twitter, YouTube, Blogs).</div>
+                    <p class="definition">Route WRITES to one server, and READS to many servers.</p>
+                    <ul>
+                        <li>The <strong>Primary (Master)</strong> handles 100% of data creation. It immediately sends a synchronization packet to all Replicas.</li>
+                        <li>The <strong>Replicas (Slaves)</strong> handle 100% of data reading. If you have 10x more readers than writers, you simply add more Replicas.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. Horizontal Sharding</h3>
+                    <div class="use-case">Ideal for: Massive datasets & Write-Heavy applications (Uber, WhatsApp).</div>
+                    <p class="definition">Splitting a giant database into smaller, independent pieces.</p>
+                    <ul>
+                        <li>A router mathematically hashes a User's ID to assign them a permanent database shard. (e.g., Hash % 3).</li>
+                        <li>User A's reads AND writes always go to Shard 1. User B's reads AND writes always go to Shard 2. This scales infinitely, but complex queries across multiple shards become very difficult.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-panel">
+            
+            <div class="control-section">
+                <div class="sec-label">1. Set DB Architecture</div>
+                <select id="arch-select" class="arch-select" onchange="changeArch()">
+                    <option value="replication">Master-Slave Replication</option>
+                    <option value="sharding">Horizontal Sharding</option>
+                </select>
+            </div>
+
+            <div class="control-section">
+                <div class="sec-label">2. Send Database Traffic</div>
+                <div class="btn-row">
+                    <button class="ui-btn btn-read" onclick="fireRequest('READ')">📘 Send READ Request</button>
+                    <button class="ui-btn btn-write" onclick="fireRequest('WRITE')">📕 Send WRITE Request</button>
+                </div>
+                <div class="btn-row" style="margin-top:5px;">
+                    <button class="ui-btn btn-spike" onclick="fireSpike()">⚠️ Random Traffic Spike</button>
+                </div>
+            </div>
+
+            <div class="control-section" style="border:none; padding-right:0;">
+                <div class="sec-label">3. System Operations</div>
+                <div class="btn-row">
+                    <button class="ui-btn btn-reset" onclick="resetSim()">↺ Reset Metrics & Logs</button>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="network-container arch-replication" id="net-map">
+                <div class="zone-label">Database Topology</div>
+                
+                <div class="node" id="node-client">
+                    <div class="node-icon">🌐</div>
+                    <div class="node-label">App Servers</div>
+                </div>
+
+                <div class="node" id="node-proxy">
+                    <div class="node-icon">🔀</div>
+                    <div class="node-label">DB Proxy / Router</div>
+                    <div class="node-sub" id="proxy-status">Splitting Reads/Writes</div>
+                </div>
+
+                <div class="db-pool" id="db-pool">
+                    
+                    <div class="db-node" id="db-1">
+                        <div class="db-header"><span id="db-title-1">Primary (Master)</span> <span style="color:var(--c-write)">[WRITES]</span></div>
+                        <div class="db-stats"><span>Reads: <span id="r-1">0</span></span> <span>Writes: <span id="w-1">0</span></span></div>
+                    </div>
+                    
+                    <div class="db-node" id="db-2">
+                        <div class="db-header"><span id="db-title-2">Replica A</span> <span style="color:var(--c-read)">[READS]</span></div>
+                        <div class="db-stats"><span>Reads: <span id="r-2">0</span></span> <span>Writes: <span id="w-2">0</span></span></div>
+                    </div>
+
+                    <div class="db-node" id="db-3">
+                        <div class="db-header"><span id="db-title-3">Replica B</span> <span style="color:var(--c-read)">[READS]</span></div>
+                        <div class="db-stats"><span>Reads: <span id="r-3">0</span></span> <span>Writes: <span id="w-3">0</span></span></div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="metrics-panel">
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <div class="stat-val" id="val-reads">0</div>
+                        <div class="stat-sub">Total Reads</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-val" id="val-writes">0</div>
+                        <div class="stat-sub">Total Writes</div>
+                    </div>
+                </div>
+
+                <div class="os-log-box">
+                    <div class="log-header">Database Query Router Log</div>
+                    <div class="os-log" id="os-log">
+                        <p style="color:#64748b;">[DB Proxy Online. Architecture: Master-Slave Replication]</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- STATE ---
+        let currentArch = 'replication'; // 'replication' or 'sharding'
+        let repIndex = 2; // Toggles between Replica 2 and 3 for load balancing reads
+        
+        let stats = {
+            totalReads: 0, totalWrites: 0,
+            db1: { r: 0, w: 0 }, db2: { r: 0, w: 0 }, db3: { r: 0, w: 0 }
+        };
+
+        // --- DOM ELEMENTS ---
+        const mapUI = document.getElementById('net-map');
+        const logUI = document.getElementById('os-log');
+        const archSelect = document.getElementById('arch-select');
+        
+        const nodeClient = document.getElementById('node-client');
+        const nodeProxy = document.getElementById('node-proxy');
+        const proxyStatus = document.getElementById('proxy-status');
+
+        const dbNodes = {
+            1: document.getElementById('db-1'),
+            2: document.getElementById('db-2'),
+            3: document.getElementById('db-3')
+        };
+
+        // --- CORE FUNCTIONS ---
+        function addLog(msg, type="log-info") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerHTML = msg;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight;
+        }
+
+        function updateMetrics() {
+            document.getElementById('val-reads').innerText = stats.totalReads;
+            document.getElementById('val-writes').innerText = stats.totalWrites;
+            
+            document.getElementById('r-1').innerText = stats.db1.r; document.getElementById('w-1').innerText = stats.db1.w;
+            document.getElementById('r-2').innerText = stats.db2.r; document.getElementById('w-2').innerText = stats.db2.w;
+            document.getElementById('r-3').innerText = stats.db3.r; document.getElementById('w-3').innerText = stats.db3.w;
+        }
+
+        function resetSim() {
+            stats = { totalReads: 0, totalWrites: 0, db1: { r:0, w:0 }, db2: { r:0, w:0 }, db3: { r:0, w:0 }};
+            updateMetrics();
+            logUI.innerHTML = `<p style="color:#64748b;">[Metrics & Logs Cleared.]</p>`;
+        }
+
+        function changeArch() {
+            currentArch = archSelect.value;
+            mapUI.className = `network-container arch-${currentArch}`;
+            
+            if(currentArch === 'replication') {
+                proxyStatus.innerText = "Splitting Reads/Writes";
+                document.getElementById('db-title-1').innerText = "Primary (Master)"; document.getElementById('db-1').querySelector('span:nth-child(2)').innerText = "[WRITES]";
+                document.getElementById('db-title-2').innerText = "Replica A"; document.getElementById('db-2').querySelector('span:nth-child(2)').innerText = "[READS]";
+                document.getElementById('db-title-3').innerText = "Replica B"; document.getElementById('db-3').querySelector('span:nth-child(2)').innerText = "[READS]";
+                addLog(`--- SWITCHED TO: MASTER-SLAVE REPLICATION ---`, 'log-arch');
+            } else {
+                proxyStatus.innerText = "Hashing User IDs";
+                document.getElementById('db-title-1').innerText = "Shard 1 (Hash 0)"; document.getElementById('db-1').querySelector('span:nth-child(2)').innerText = "[R/W]";
+                document.getElementById('db-title-2').innerText = "Shard 2 (Hash 1)"; document.getElementById('db-2').querySelector('span:nth-child(2)').innerText = "[R/W]";
+                document.getElementById('db-title-3').innerText = "Shard 3 (Hash 2)"; document.getElementById('db-3').querySelector('span:nth-child(2)').innerText = "[R/W]";
+                addLog(`--- SWITCHED TO: HORIZONTAL SHARDING ---`, 'log-arch');
+            }
+            resetSim();
+        }
+
+        // --- ROUTING LOGIC ---
+        function fireRequest(type) {
+            const isRead = type === 'READ';
+            const pktClass = isRead ? 'pkt-read' : 'pkt-write';
+            const pktLabel = isRead ? 'R' : 'W';
+            const userId = Math.floor(Math.random() * 900) + 100; // Random user 100-999
+            
+            // 1. Client to Proxy
+            animatePacket(nodeClient, nodeProxy, 300, pktClass, pktLabel);
+            
+            setTimeout(() => {
+                let targetDbId = 1;
+                let logMsg = "";
+                let logClass = isRead ? 'log-read' : 'log-write';
+
+                if (currentArch === 'replication') {
+                    if (isRead) {
+                        // Reads go to Replicas (Toggle between 2 and 3)
+                        targetDbId = repIndex;
+                        repIndex = repIndex === 2 ? 3 : 2;
+                        logMsg = `[PROXY] Route READ to Replica ${targetDbId === 2 ? 'A' : 'B'}`;
+                        stats[`db${targetDbId}`].r++;
+                        stats.totalReads++;
+                    } else {
+                        // Writes MUST go to Primary
+                        targetDbId = 1;
+                        logMsg = `[PROXY] Route WRITE to Primary (Master)`;
+                        stats.db1.w++;
+                        stats.totalWrites++;
+                        
+                        // REPLICATION SYNC MECHANISM
+                        setTimeout(() => {
+                            addLog(`[PRIMARY] Syncing data update to Replicas...`, 'log-sync');
+                            animatePacket(dbNodes[1], dbNodes[2], 400, 'pkt-sync', 'S');
+                            animatePacket(dbNodes[1], dbNodes[3], 400, 'pkt-sync', 'S');
+                            
+                            setTimeout(() => {
+                                stats.db2.w++; stats.db3.w++; // Technically writing to replicas behind the scenes
+                                updateMetrics();
+                                dbNodes[2].classList.add('highlight'); dbNodes[3].classList.add('highlight');
+                                setTimeout(() => { dbNodes[2].classList.remove('highlight'); dbNodes[3].classList.remove('highlight'); }, 200);
+                            }, 400);
+                        }, 400);
+                    }
+                } 
+                else if (currentArch === 'sharding') {
+                    // Both Reads and Writes routed by Hash
+                    let hash = userId % 3; // Result 0, 1, or 2
+                    targetDbId = hash + 1; // Shard 1, 2, or 3
+                    
+                    logMsg = `[PROXY] User ${userId} Hash=${hash}. Route ${type} to Shard ${targetDbId}`;
+                    if(isRead) { stats[`db${targetDbId}`].r++; stats.totalReads++; }
+                    else { stats[`db${targetDbId}`].w++; stats.totalWrites++; }
+                }
+
+                // Execute Routing
+                addLog(logMsg, logClass);
+                updateMetrics();
+                
+                const targetNode = dbNodes[targetDbId];
+                animatePacket(nodeProxy, targetNode, 300, pktClass, pktLabel);
+                
+                setTimeout(() => {
+                    targetNode.classList.add('highlight');
+                    setTimeout(() => targetNode.classList.remove('highlight'), 200);
+                }, 300);
+
+            }, 300);
+        }
+
+        function fireSpike() {
+            addLog("⚠️ TRAFFIC SPIKE INITIATED", "log-write");
+            for(let i=0; i<10; i++) {
+                // 80% chance of Read, 20% chance of Write (Realistic web traffic)
+                let type = Math.random() > 0.2 ? 'READ' : 'WRITE';
+                setTimeout(() => fireRequest(type), i * 150);
+            }
+        }
+
+        // --- ANIMATION HELPER ---
+        function getCenterCoords(element) {
+            if(!element) return {x:0, y:0};
+            const mapRect = mapUI.getBoundingClientRect();
+            const elRect = element.getBoundingClientRect();
+            return {
+                x: (elRect.left - mapRect.left) + (elRect.width / 2),
+                y: (elRect.top - mapRect.top) + (elRect.height / 2)
+            };
+        }
+
+        function animatePacket(fromEl, toEl, durationMs, pktClass, label) {
+            if(!fromEl || !toEl) return;
+            const start = getCenterCoords(fromEl);
+            const end = getCenterCoords(toEl);
+
+            const pkt = document.createElement('div');
+            pkt.className = `packet ${pktClass}`;
+            pkt.innerText = label;
+            mapUI.appendChild(pkt);
+
+            pkt.style.left = `${start.x}px`;
+            pkt.style.top = `${start.y}px`;
+            pkt.style.opacity = '1';
+            
+            void pkt.offsetWidth; // Force reflow
+
+            pkt.style.transition = `all ${durationMs}ms linear`;
+            pkt.style.left = `${end.x}px`;
+            pkt.style.top = `${end.y}px`;
+
+            setTimeout(() => pkt.remove(), durationMs);
+        }
+    </script>
+</body>
+</html>

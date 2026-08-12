@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | the scheduler</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 40px; }
+        .container { max-width: 1300px; margin: 0 auto; }
+        h1 { font-size: 3rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid (Forced Horizontal Layout) */
+       /* Theory Cards Grid (Vertical Stack) */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 20px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.3rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 10px; margin-bottom: 15px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.95rem; margin-top: 0; margin-bottom: 15px; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.6; font-size: 0.95rem; margin: 0;}
+        .theory-card li { margin-bottom: 8px; }
+        .formula { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.85rem; border: 1px solid #cbd5e1; display: inline-block; margin-top: 4px;}
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .control-label { text-transform: uppercase; color: var(--accent-purple); font-weight: bold; margin-right: 5px; }
+        
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 15px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase;
+        }
+        .ui-btn:hover { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn.active { background: var(--hl-cyan); box-shadow: 0 0 0 transparent; transform: translate(2px, 2px); }
+        
+        .inject-btn { background: var(--accent-purple); color: var(--white); }
+        .reset-btn { background: #ef4444; color: var(--white); }
+
+        /* Dashboard Layout */
+        .dashboard { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        .box { background: var(--white); border: 4px solid var(--text-dark); padding: 20px; box-shadow: 8px 8px 0 var(--text-dark); border-radius: 4px; }
+        .box h3 { margin-top: 0; text-transform: lowercase; border-bottom: 3px solid var(--text-dark); padding-bottom: 10px; font-weight: 900; }
+
+        /* CPU & Clock Area */
+        .cpu-area { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
+        .cpu-socket { 
+            flex: 1; min-width: 150px; border: 4px dashed var(--accent-purple); background: #fdfcfa; 
+            min-height: 150px; display: flex; justify-content: center; align-items: center; position: relative; transition: all 0.3s;
+        }
+        .cpu-socket.active { border-style: solid; background: var(--hl-cyan); box-shadow: inset 0 0 20px rgba(0,0,0,0.1); }
+        
+        .hardware-clock { 
+            width: 150px; text-align: center; border: 4px solid var(--text-dark); background: var(--hl-yellow); 
+            display: flex; flex-direction: column; justify-content: center; font-weight: bold; box-shadow: 4px 4px 0 var(--text-dark);
+        }
+        .clock-val { font-size: 3rem; font-family: var(--font-mono); }
+
+        /* Process Blocks */
+        .process {
+            background: var(--text-dark); color: var(--white); padding: 10px 15px; border-radius: 4px; width: 120px;
+            font-family: var(--font-mono); text-align: center; font-weight: bold; position: relative;
+            box-shadow: 4px 4px 0 rgba(0,0,0,0.3); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); animation: popIn 0.4s ease-out;
+            margin: 0 auto;
+        }
+        .process.c0 { background: #ef4444; } /* Red */
+        .process.c1 { background: #3b82f6; } /* Blue */
+        .process.c2 { background: #10b981; } /* Green */
+        .process.c3 { background: #f59e0b; } /* Orange */
+        .process.c4 { background: #8b5cf6; } /* Purple */
+        .process.c5 { background: #ec4899; } /* Pink */
+        
+        .progress-bar { height: 8px; background: rgba(255,255,255,0.3); margin-top: 8px; border-radius: 4px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--white); transition: width 0.3s linear; }
+        .vruntime-tag { font-size: 0.65rem; background: rgba(0,0,0,0.5); padding: 2px 5px; border-radius: 2px; margin-top: 5px; color: #fbbf24; }
+
+        /* Ready Queue */
+        .ready-queue { display: flex; gap: 15px; min-height: 100px; padding: 10px; background: #e2e8f0; border: 2px inset var(--text-dark); align-items: center; overflow-x: auto; }
+
+        /* OS Terminal */
+        .os-log { background: #1e293b; color: #38bdf8; font-family: var(--font-mono); padding: 15px; height: 380px; overflow-y: auto; font-size: 0.85rem; border: 4px solid var(--text-dark); box-shadow: 8px 8px 0 var(--text-dark); }
+        .os-log p { margin: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;}
+        .log-sys { color: #f43f5e; font-weight: bold; }
+        .log-cpu { color: #a3e635; }
+        .log-warn { color: #fbbf24; font-style: italic; }
+
+        /* Step Controls */
+        .step-container { display: flex; gap: 15px; margin-top: 20px; }
+        .step-btn { 
+            background: var(--white); border: 3px solid var(--text-dark); padding: 15px; font-size: 1.2rem; 
+            font-weight: bold; cursor: pointer; text-transform: lowercase; 
+            box-shadow: 4px 4px 0 var(--text-dark); transition: all 0.1s; display: flex; justify-content: center; align-items: center;
+        }
+        .step-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 2px 2px 0 transparent; }
+        .step-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+
+        @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1>The Scheduler</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. Non-Preemptive</h3>
+                    <p class="definition">Definition: Once a process enters the CPU, it cannot be interrupted. It holds the CPU until it finishes its task or voluntarily yields.</p>
+                    <ul>
+                        <li><strong>FCFS (First Come First Serve):</strong> Simple FIFO queue. Causes the <em>Convoy Effect</em> (tiny processes stuck behind massive ones).</li>
+                        <li><strong>SJF (Shortest Job First):</strong> Scans queue and executes the shortest job. Minimizes average wait time, but large jobs can starve.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. Preemptive Algorithms</h3>
+                    <p class="definition">Definition: The OS acts as a strict manager. It can forcefully interrupt a running process and swap it out for another based on priority or a time limit.</p>
+                    <ul>
+                        <li><strong>SRTF (Shortest Remaining Time):</strong> If a new, shorter process arrives while a longer one is running, the OS pauses the current one and swaps!</li>
+                        <li><strong>Round Robin (RR):</strong> Every process gets a strict "Time Quantum". If it doesn't finish, it's kicked out. Fair, but high context-switch overhead.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. Real-World (Linux CFS)</h3>
+                    <ul>
+                        <li><strong>Completely Fair Scheduler:</strong> Abandons strict queues. It tracks <code>vruntime</code>. The CPU prioritizes whichever process has the lowest vruntime to balance the load.</li>
+                    </ul>
+                </div>
+                <div class="theory-card" style="background-color: #f8fafc;">
+                    <h3>4. Core Formulas</h3>
+                    <ul>
+                        <li><strong>Arrival Time (AT):</strong> Time entered queue.</li>
+                        <li><strong>Burst Time (BT):</strong> Total CPU time needed.</li>
+                        <li><strong>Turnaround Time:</strong> Total time in system.<br><span class="formula">TAT = Completion Time - AT</span></li>
+                        <li><strong>Waiting Time:</strong> Time spent stuck in queue.<br><span class="formula">WT = TAT - BT</span></li>
+                        <li><strong>Response Time:</strong> Time until first CPU load.<br><span class="formula">RT = First Run Time - AT</span></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <span class="control-label">Algorithm:</span>
+                <button class="ui-btn active algo-btn" onclick="setAlgorithm('FCFS')">FCFS</button>
+                <button class="ui-btn algo-btn" onclick="setAlgorithm('SJF')">SJF</button>
+                <button class="ui-btn algo-btn" onclick="setAlgorithm('SRTF')">SRTF</button>
+                <button class="ui-btn algo-btn" onclick="setAlgorithm('RR')">Round Robin</button>
+                <button class="ui-btn algo-btn" onclick="setAlgorithm('CFS')">Linux CFS</button>
+            </div>
+            
+            <div class="control-group">
+                <span class="control-label">Cores (Max 4):</span>
+                <button class="ui-btn core-btn active" onclick="setCores(1)">1 Core</button>
+                <button class="ui-btn core-btn" onclick="setCores(2)">2 Cores</button>
+                <button class="ui-btn core-btn" onclick="setCores(4)">4 Cores</button>
+            </div>
+
+            <div class="control-group">
+                <button class="ui-btn inject-btn" onclick="injectProcess()">+ Inject Process</button>
+                <button class="ui-btn reset-btn" onclick="resetSim()">↺ Reset</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <div class="box" style="background: transparent; border: none; box-shadow: none; padding: 0;">
+                
+                <div class="cpu-area" id="cpu-container">
+                    </div>
+
+                <div class="box">
+                    <h3>Ready Queue (RAM)</h3>
+                    <div class="ready-queue" id="ready-queue"></div>
+                </div>
+
+                <div class="step-container">
+                    <button class="step-btn" onclick="stepBack()" id="back-btn" style="flex: 1;" disabled>← back</button>
+                    <button class="step-btn" onclick="tickClock()" id="tick-btn" style="flex: 2; background: var(--hl-yellow);">step hardware clock ➔</button>
+                </div>
+            </div>
+
+            <div class="os-log" id="os-log">
+                </div>
+        </div>
+
+    </div>
+
+    <script>
+        // System State
+        const QUANTUM = 3;
+        let currentAlgo = 'FCFS';
+        let numCores = 1;
+        
+        let globalClock = 0;
+        let processCounter = 1;
+        
+        // Multi-core arrays
+        let cpus = []; 
+        let quantumTimers = []; 
+        let readyQueue = [];
+
+        // History Stack for Back button
+        let historyStack = [];
+
+        const cpuContainer = document.getElementById('cpu-container');
+        const queueContainer = document.getElementById('ready-queue');
+        const logContainer = document.getElementById('os-log');
+        const backBtn = document.getElementById('back-btn');
+        const tickBtn = document.getElementById('tick-btn');
+
+        function log(msg, type = "log-cpu") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerText = `[T=${globalClock}] ${msg}`;
+            logContainer.appendChild(p);
+            logContainer.scrollTop = logContainer.scrollHeight; 
+        }
+
+        // --- Core Controls ---
+        
+        function setCores(n) {
+            numCores = n;
+            document.querySelectorAll('.core-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            resetSim();
+        }
+
+        function setAlgorithm(algo) {
+            currentAlgo = algo;
+            document.querySelectorAll('.algo-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            resetSim();
+        }
+
+        function resetSim() {
+            globalClock = 0;
+            processCounter = 1;
+            readyQueue = [];
+            historyStack = []; // Clear History
+            
+            cpus = new Array(numCores).fill(null);
+            quantumTimers = new Array(numCores).fill(0);
+            
+            logContainer.innerHTML = '';
+            let extra = currentAlgo === 'RR' ? `(Quantum: ${QUANTUM})` : '';
+            log(`System Boot. ${numCores} Cores Active. Algorithm: ${currentAlgo} ${extra}`, "log-sys");
+            
+            // Spawn initial load
+            addProcessToQueue(5);
+            addProcessToQueue(3);
+            addProcessToQueue(6);
+            if(numCores > 1) { addProcessToQueue(4); addProcessToQueue(7); }
+            
+            updateButtons();
+            renderSystem();
+        }
+
+        function addProcessToQueue(totalLength) {
+            let pid = `P${processCounter}`;
+            let pObj = {
+                id: pid,
+                class: `c${processCounter % 6}`, 
+                total: totalLength,
+                executed: 0,
+                vruntime: 0 
+            };
+            readyQueue.push(pObj);
+            processCounter++;
+            return pObj;
+        }
+
+        function injectProcess() {
+            saveState(); // Save state so we can undo an injection
+            let len = Math.floor(Math.random() * 5) + 2; // Length 2 to 6
+            let p = addProcessToQueue(len);
+            log(`[INTERRUPT] Injected ${p.id} (Length: ${len}) into Queue!`, "log-warn");
+            
+            updateButtons();
+            renderSystem();
+        }
+
+        // --- State Management (Time Travel) ---
+
+        function saveState() {
+            let snapshot = {
+                globalClock: globalClock,
+                processCounter: processCounter,
+                cpus: JSON.parse(JSON.stringify(cpus)),
+                readyQueue: JSON.parse(JSON.stringify(readyQueue)),
+                quantumTimers: [...quantumTimers],
+                logHTML: logContainer.innerHTML
+            };
+            historyStack.push(snapshot);
+        }
+
+        function stepBack() {
+            if (historyStack.length === 0) return;
+            
+            let prevState = historyStack.pop();
+            
+            // Restore exact state variables
+            globalClock = prevState.globalClock;
+            processCounter = prevState.processCounter;
+            cpus = prevState.cpus;
+            readyQueue = prevState.readyQueue;
+            quantumTimers = prevState.quantumTimers;
+            logContainer.innerHTML = prevState.logHTML;
+
+            updateButtons();
+            renderSystem();
+        }
+
+        function updateButtons() {
+            // Enable/disable tick clock based on if tasks remain
+            let systemBusy = cpus.some(core => core !== null) || readyQueue.length > 0;
+            tickBtn.disabled = !systemBusy;
+            tickBtn.innerText = systemBusy ? "step hardware clock ➔" : "Simulation Complete";
+            tickBtn.style.background = systemBusy ? "var(--hl-yellow)" : "#e2e8f0";
+
+            // Enable/disable back button based on history stack
+            backBtn.disabled = historyStack.length === 0;
+        }
+
+        // --- Execution & Animation Rendering ---
+
+        function createProcessDOM(proc) {
+            const percent = (proc.executed / proc.total) * 100;
+            let vrunHtml = currentAlgo === 'CFS' ? `<div class="vruntime-tag">vRun: ${proc.vruntime}</div>` : '';
+            return `
+                <div class="process ${proc.class}" id="${proc.id}">
+                    ${proc.id}
+                    <div class="progress-bar"><div class="progress-fill" style="width: ${percent}%;"></div></div>
+                    <div style="font-size: 0.7rem; margin-top: 5px;">${proc.executed} / ${proc.total}</div>
+                    ${vrunHtml}
+                </div>
+            `;
+        }
+
+        function renderSystem() {
+            // Render Queue
+            queueContainer.innerHTML = '';
+            readyQueue.forEach(p => { queueContainer.innerHTML += createProcessDOM(p); });
+
+            // Render CPUs dynamically
+            cpuContainer.innerHTML = '';
+            for(let i=0; i<numCores; i++) {
+                let p = cpus[i];
+                let activeCls = p ? 'active' : '';
+                let content = p ? createProcessDOM(p) : '<span style="color: #94a3b8; font-weight: bold;">[ IDLE ]</span>';
+                
+                cpuContainer.innerHTML += `
+                    <div class="cpu-socket ${activeCls}">
+                        <div style="position: absolute; top: -15px; left: 10px; background: var(--accent-purple); color: white; padding: 2px 10px; font-size: 0.8rem; font-weight: bold; border: 2px solid var(--text-dark);">CORE ${i}</div>
+                        ${content}
+                    </div>
+                `;
+            }
+            
+            // Append Hardware Clock
+            cpuContainer.innerHTML += `
+                <div class="hardware-clock">
+                    <div>CLOCK</div>
+                    <div class="clock-val">${globalClock}</div>
+                </div>
+            `;
+            
+            // Re-scroll logs to bottom after rendering
+            logContainer.scrollTop = logContainer.scrollHeight; 
+        }
+
+        // --- Scheduler Helpers ---
+
+        function getBestFromQueue() {
+            if(readyQueue.length === 0) return -1;
+            let bestIdx = 0;
+            for(let i=1; i<readyQueue.length; i++) {
+                if (currentAlgo === 'SJF' || currentAlgo === 'SRTF') {
+                    let bestRem = readyQueue[bestIdx].total - readyQueue[bestIdx].executed;
+                    let currRem = readyQueue[i].total - readyQueue[i].executed;
+                    if(currRem < bestRem) bestIdx = i;
+                } else if (currentAlgo === 'CFS') {
+                    if(readyQueue[i].vruntime < readyQueue[bestIdx].vruntime) bestIdx = i;
+                }
+            }
+            return bestIdx;
+        }
+
+        function preemptToQueue(coreIdx, reason) {
+            log(`Preempting Core ${coreIdx} (${cpus[coreIdx].id}): ${reason}`, "log-warn");
+            readyQueue.push(cpus[coreIdx]);
+            cpus[coreIdx] = null;
+        }
+
+        // --- Main Tick Logic ---
+
+        function tickClock() {
+            saveState(); // Take memory snapshot before changing anything
+            
+            globalClock++;
+
+            // 1. PREEMPTION PHASE
+            for(let i=0; i<numCores; i++) {
+                if(cpus[i]) {
+                    if(currentAlgo === 'RR' && quantumTimers[i] >= QUANTUM) {
+                        preemptToQueue(i, `Quantum Expired`);
+                    }
+                    else if(currentAlgo === 'SRTF' && readyQueue.length > 0) {
+                        let bestQ = getBestFromQueue();
+                        let cRem = cpus[i].total - cpus[i].executed;
+                        let qRem = readyQueue[bestQ].total - readyQueue[bestQ].executed;
+                        if(qRem < cRem) preemptToQueue(i, `Shorter job found`);
+                    }
+                    else if(currentAlgo === 'CFS' && readyQueue.length > 0) {
+                        let bestQ = getBestFromQueue();
+                        if(readyQueue[bestQ].vruntime < cpus[i].vruntime) preemptToQueue(i, `Lower vruntime found`);
+                    }
+                }
+            }
+
+            // 2. LOADING PHASE
+            for(let i=0; i<numCores; i++) {
+                if(!cpus[i] && readyQueue.length > 0) {
+                    let bestIdx = getBestFromQueue();
+                    cpus[i] = readyQueue.splice(bestIdx, 1)[0];
+                    quantumTimers[i] = 0;
+                    log(`Context Switch: Loaded ${cpus[i].id} into Core ${i}.`, "log-sys");
+                }
+            }
+
+            // 3. EXECUTION PHASE
+            for(let i=0; i<numCores; i++) {
+                if(cpus[i]) {
+                    cpus[i].executed++;
+                    quantumTimers[i]++;
+                    if(currentAlgo === 'CFS') cpus[i].vruntime++; 
+
+                    log(`Core ${i} executed ${cpus[i].id}.`);
+
+                    if (cpus[i].executed >= cpus[i].total) {
+                        log(`Process ${cpus[i].id} Terminated on Core ${i}.`, "log-sys");
+                        cpus[i] = null;
+                        quantumTimers[i] = 0;
+                    } 
+                }
+            }
+
+            updateButtons();
+            renderSystem();
+            
+            if (tickBtn.disabled) {
+                log("All processes completed.", "log-sys");
+            }
+        }
+
+        // Initialize First Run
+        resetSim();
+    </script>
+</body>
+</html>

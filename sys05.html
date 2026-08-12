@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-sys | edge & api management</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+            
+            --c-cdn: #3b82f6;      /* Blue */
+            --c-gateway: #a855f7;  /* Purple */
+            --c-backend: #10b981;  /* Green */
+            --c-danger: #ef4444;   /* Red */
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards (Strictly Vertical) */
+        .theory-wrapper { margin-bottom: 20px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); padding: 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.2rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px; text-transform: uppercase;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.9rem; margin: 0;}
+
+        /* Controls Panel */
+        .controls-panel { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 20px; padding: 15px 20px;}
+        .control-section { display: flex; flex-direction: column; gap: 10px; padding-right: 20px;}
+        .control-section:not(:last-child) { border-right: 2px dashed #cbd5e1; }
+        .sec-label { font-weight: 900; color: var(--accent-purple); text-transform: uppercase; font-size: 0.85rem;}
+        .btn-row { display: flex; gap: 8px; flex-wrap: wrap;}
+
+        .ui-btn { 
+            background: var(--bg-color); border: 3px solid var(--text-dark); padding: 8px 15px; font-weight: 900; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 3px 3px 0 var(--text-dark); transition: all 0.1s; font-size: 0.85rem; text-transform: uppercase;
+        }
+        .ui-btn:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-static { border-color: var(--c-cdn); color: var(--c-cdn); }
+        .btn-api { border-color: var(--c-gateway); color: var(--c-gateway); }
+        .btn-ddos { background: var(--c-danger); color: white;}
+        .btn-reset { background: var(--white); color: var(--c-danger); border-color: var(--c-danger);}
+
+        .limit-select { font-family: var(--font-mono); font-size: 1rem; font-weight: bold; border: 3px solid var(--text-dark); padding: 7px; background: var(--white); cursor: pointer;}
+
+        /* DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; align-items: start;}
+        
+        /* LEFT: NETWORK TOPOLOGY */
+        .network-container { background: #fdfcfa; border: 4px dashed var(--accent-purple); padding: 20px; height: 500px; position: relative; overflow: hidden;}
+        .zone-label { position: absolute; top: 10px; left: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 2px;}
+
+        .node { border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); position: absolute; display: flex; flex-direction: column; justify-content: center; align-items: center; background: var(--white); z-index: 10; transition: transform 0.1s;}
+        .node-icon { font-size: 2rem; margin-bottom: 5px; }
+        .node-label { font-weight: 900; text-transform: uppercase; font-size: 0.75rem; text-align: center; padding: 0 5px;}
+        .node-sub { font-family: var(--font-mono); font-size: 0.65rem; font-weight: bold; margin-top: 3px; color: #64748b;}
+        
+        /* Specific Nodes */
+        #node-client { width: 100px; height: 100px; top: 50%; left: 5%; transform: translateY(-50%); border-color: var(--text-dark); }
+        
+        /* Edge/CDN */
+        #node-cdn { width: 130px; height: 100px; top: 10%; left: 35%; border-color: var(--c-cdn); background: #eff6ff;}
+        
+        /* Gateway */
+        #node-gateway { width: 140px; height: 140px; top: 55%; left: 35%; transform: translateY(-50%); border-color: var(--c-gateway); background: #faf5ff;}
+        
+        /* Token Bucket Visual inside Gateway */
+        .token-bucket { border: 2px solid var(--text-dark); width: 80%; height: 20px; background: #e2e8f0; margin-top: 10px; position: relative; display: flex; align-items: center; justify-content: center;}
+        .token-fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--hl-yellow); transition: width 0.2s;}
+        .token-text { position: relative; z-index: 5; font-family: var(--font-mono); font-size: 0.6rem; font-weight: 900; color: var(--text-dark);}
+
+        /* Backend */
+        #node-backend { width: 140px; height: 140px; top: 55%; right: 10%; transform: translateY(-50%); border-color: var(--c-backend); background: #f0fdf4;}
+
+        /* The Animated Packet */
+        .packet { 
+            position: absolute; width: 16px; height: 16px; border-radius: 50%;
+            border: 2px solid var(--white); background: var(--text-dark);
+            z-index: 20; transform: translate(-50%, -50%); opacity: 0; 
+            box-shadow: 2px 2px 0 rgba(0,0,0,0.5); pointer-events: none;
+            display: flex; justify-content: center; align-items: center; color: white; font-weight: 900; font-size: 0.55rem; font-family: var(--font-mono);
+        }
+
+        /* RIGHT: METRICS & LOGS */
+        .metrics-panel { display: flex; flex-direction: column; gap: 15px; }
+        
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .stat-box { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); padding: 15px; text-align: center; color: white;}
+        .stat-val { font-size: 2.5rem; font-weight: 900; color: var(--white); line-height: 1; font-family: var(--font-mono);}
+        .stat-sub { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-top: 5px;}
+        
+        #val-latency { color: var(--hl-yellow); }
+        #val-dropped { color: var(--c-danger); }
+
+        .os-log-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); flex: 1; display: flex; flex-direction: column; height: 350px;}
+        .log-header { font-weight: 900; font-size: 0.9rem; text-transform: uppercase; padding: 10px; border-bottom: 3px solid var(--text-dark); background: #f8fafc;}
+        .os-log { font-family: var(--font-mono); font-size: 0.75rem; overflow-y: auto; padding: 15px; flex: 1; background: #0f172a; color: #cbd5e1; line-height: 1.4;}
+        .os-log p { margin: 4px 0; border-bottom: 1px dashed #334155; padding-bottom: 4px;}
+        
+        .log-static { color: #93c5fd; }
+        .log-api { color: #d8b4fe; }
+        .log-warn { color: var(--hl-yellow); font-weight: bold;}
+        .log-err { color: #fca5a5; font-weight: bold; background: rgba(239, 68, 68, 0.1); padding: 4px; border-left: 4px solid var(--c-danger);}
+
+        @keyframes pulseRed { 0%, 100% { box-shadow: 6px 6px 0 var(--text-dark); } 50% { box-shadow: 0 0 20px var(--c-danger); border-color: var(--c-danger); } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to system hub</a>
+        <h1>sys 05: edge & api management</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                
+                <div class="theory-card">
+                    <h3>1. CDN (Content Delivery Network)</h3>
+                    <p class="definition">Static assets belong at the Edge, not in your database.</p>
+                    <ul>
+                        <li>Images, Videos, and CSS files rarely change. Serving them from your central backend is slow and wastes bandwidth.</li>
+                        <li>A CDN copies these static files to "Edge Servers" all over the globe. When a user requests an image, they download it from a server physically close to them, bypassing your backend entirely. (Result: ~15ms latency).</li>
+                    </ul>
+                </div>
+
+                <div class="theory-card">
+                    <h3>2. The API Gateway</h3>
+                    <p class="definition">The bouncer at the front door of your dynamic microservices.</p>
+                    <ul>
+                        <li>Dynamic requests (like <code>POST /login</code> or <code>GET /bank-balance</code>) cannot be cached globally. They must hit your backend.</li>
+                        <li>Instead of exposing your backend directly to the internet, you use an API Gateway. It handles routing, verifies JWT Authentication tokens, and acts as a shield.</li>
+                    </ul>
+                </div>
+
+                <div class="theory-card">
+                    <h3>3. Rate Limiting (Token Bucket)</h3>
+                    <p class="definition">Protecting the system from DDoS and abusive scraping.</p>
+                    <ul>
+                        <li>We use algorithms like the <strong>Token Bucket</strong>. The bucket holds a maximum number of "tokens" and refills at a steady rate.</li>
+                        <li>Every API request costs 1 token. If the bucket is empty, the API Gateway drops the request and returns a <code>429 Too Many Requests</code> error, saving the backend from crashing.</li>
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="controls-panel">
+            
+            <div class="control-section">
+                <div class="sec-label">1. Client Traffic</div>
+                <div class="btn-row">
+                    <button class="ui-btn btn-static" onclick="fireRequest('STATIC')" id="btn-static">🖼️ Fetch Image (Static)</button>
+                    <button class="ui-btn btn-api" onclick="fireRequest('API')" id="btn-api">⚙️ Fetch Profile (API)</button>
+                </div>
+                <div class="btn-row" style="margin-top:5px;">
+                    <button class="ui-btn btn-ddos" onclick="fireSpike()" id="btn-ddos">⚠️ Execute DDoS Spike</button>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <div class="sec-label">2. Gateway Configuration</div>
+                <select id="limit-select" class="limit-select" onchange="changeLimit()">
+                    <option value="5">Rate Limit: 5 req / sec</option>
+                    <option value="15">Rate Limit: 15 req / sec (High)</option>
+                    <option value="1">Rate Limit: 1 req / sec (Strict)</option>
+                </select>
+            </div>
+
+            <div class="control-section" style="border:none; padding-right:0;">
+                <div class="sec-label">3. Ops</div>
+                <button class="ui-btn btn-reset" onclick="resetSim()">↺ Reset Metrics</button>
+            </div>
+
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="network-container" id="net-map">
+                <div class="zone-label">Global Architecture</div>
+                
+                <div class="node" id="node-client">
+                    <div class="node-icon">💻</div>
+                    <div class="node-label">User App</div>
+                </div>
+
+                <div class="node" id="node-cdn">
+                    <div class="node-icon">🌍</div>
+                    <div class="node-label">CDN Edge</div>
+                    <div class="node-sub">Static Assets</div>
+                </div>
+
+                <div class="node" id="node-gateway">
+                    <div class="node-icon">🛡️</div>
+                    <div class="node-label">API Gateway</div>
+                    <div class="node-sub">Dynamic Routing</div>
+                    
+                    <div class="token-bucket">
+                        <div class="token-fill" id="token-fill"></div>
+                        <div class="token-text" id="token-text">Tokens: 5/5</div>
+                    </div>
+                </div>
+
+                <div class="node" id="node-backend">
+                    <div class="node-icon">🏭</div>
+                    <div class="node-label">Backend Cluster</div>
+                    <div class="node-sub">Microservices + DB</div>
+                </div>
+            </div>
+
+            <div class="metrics-panel">
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <div class="stat-val" id="val-latency">0</div>
+                        <div class="stat-sub">Last Latency (ms)</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-val" id="val-dropped">0</div>
+                        <div class="stat-sub">429 Errors (Dropped)</div>
+                    </div>
+                </div>
+
+                <div class="os-log-box">
+                    <div class="log-header">System Access Log</div>
+                    <div class="os-log" id="os-log">
+                        <p style="color:#64748b;">[System Ready. Gateway and CDN Online.]</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- RATE LIMITER STATE (Token Bucket) ---
+        let maxTokens = 5;
+        let currentTokens = 5;
+        let refillRateMs = 1000; // 1 token per second initially
+        
+        let stats = { dropped: 0, lastLatency: 0 };
+        let isAnimating = false;
+
+        // --- DOM ELEMENTS ---
+        const mapUI = document.getElementById('net-map');
+        const logUI = document.getElementById('os-log');
+        const limitSelect = document.getElementById('limit-select');
+        
+        const nClient = document.getElementById('node-client');
+        const nCDN = document.getElementById('node-cdn');
+        const nGateway = document.getElementById('node-gateway');
+        const nBackend = document.getElementById('node-backend');
+        
+        const tokenFill = document.getElementById('token-fill');
+        const tokenText = document.getElementById('token-text');
+
+        // --- BUCKET REFILL LOGIC ---
+        setInterval(() => {
+            if (currentTokens < maxTokens) {
+                currentTokens++;
+                updateBucketUI();
+            }
+        }, refillRateMs);
+
+        function updateBucketUI() {
+            tokenText.innerText = `${currentTokens}/${maxTokens}`;
+            let pct = (currentTokens / maxTokens) * 100;
+            tokenFill.style.width = `${pct}%`;
+            
+            if (currentTokens === 0) {
+                tokenFill.style.backgroundColor = "var(--c-danger)";
+            } else if (currentTokens <= 2) {
+                tokenFill.style.backgroundColor = "var(--hl-yellow)";
+            } else {
+                tokenFill.style.backgroundColor = "var(--c-backend)";
+            }
+        }
+
+        // --- CORE FUNCTIONS ---
+        function addLog(msg, type="log-info") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerHTML = msg;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight;
+        }
+
+        function updateMetrics(latency) {
+            stats.lastLatency = latency;
+            document.getElementById('val-latency').innerText = latency;
+            document.getElementById('val-dropped').innerText = stats.dropped;
+        }
+
+        function changeLimit() {
+            const val = parseInt(limitSelect.value);
+            maxTokens = val;
+            currentTokens = val;
+            // Simplified: Refill rate scales to allow X tokens per second.
+            refillRateMs = 1000 / val; 
+            updateBucketUI();
+            addLog(`--- Gateway Rate Limit modified to ${val} req/sec ---`, "log-warn");
+        }
+
+        function resetSim() {
+            stats = { dropped: 0, lastLatency: 0 };
+            currentTokens = maxTokens;
+            updateBucketUI();
+            document.getElementById('val-latency').innerText = 0;
+            document.getElementById('val-dropped').innerText = 0;
+            logUI.innerHTML = `<p style="color:#64748b;">[Metrics Cleared.]</p>`;
+        }
+
+        // --- TRAFFIC SIMULATION ---
+        async function fireRequest(type) {
+            // Prevent overlap confusion for single clicks
+            if(isAnimating && type !== 'SPIKE') return; 
+            if(type !== 'SPIKE') isAnimating = true;
+
+            if (type === 'STATIC') {
+                // CDN PATH
+                addLog(`[CLIENT] GET /hero-image.jpg`, "log-static");
+                animatePacket(nClient, nCDN, 200, "var(--c-cdn)", "IMG");
+                await new Promise(r => setTimeout(r, 200));
+                
+                nCDN.style.transform = "scale(1.05)"; setTimeout(() => nCDN.style.transform = "", 150);
+                addLog(`[CDN] Edge Cache Hit. Returning file instantly.`, "log-static");
+                
+                animatePacket(nCDN, nClient, 200, "var(--c-cdn)", "200");
+                await new Promise(r => setTimeout(r, 200));
+                
+                updateMetrics(Math.floor(Math.random() * 10) + 10); // 10-20ms
+            } 
+            else if (type === 'API' || type === 'SPIKE') {
+                // DYNAMIC PATH
+                addLog(`[CLIENT] GET /api/user/data`, "log-api");
+                animatePacket(nClient, nGateway, 250, "var(--c-gateway)", "API");
+                await new Promise(r => setTimeout(r, 250));
+
+                // GATEWAY CHECK
+                if (currentTokens > 0) {
+                    // Allowed
+                    currentTokens--;
+                    updateBucketUI();
+                    
+                    addLog(`[GATEWAY] Token consumed. Forwarding to Backend.`, "log-api");
+                    animatePacket(nGateway, nBackend, 300, "var(--c-backend)", "FWD");
+                    await new Promise(r => setTimeout(r, 300));
+
+                    nBackend.style.transform = "scale(1.05)"; setTimeout(() => nBackend.style.transform = "", 150);
+                    
+                    animatePacket(nBackend, nGateway, 300, "var(--c-backend)", "OK");
+                    await new Promise(r => setTimeout(r, 300));
+                    
+                    animatePacket(nGateway, nClient, 250, "var(--c-gateway)", "200");
+                    await new Promise(r => setTimeout(r, 250));
+
+                    updateMetrics(Math.floor(Math.random() * 50) + 120); // 120-170ms
+                } 
+                else {
+                    // Rate Limited
+                    stats.dropped++;
+                    addLog(`[GATEWAY] Bucket empty! Dropping request. (429 Error)`, "log-err");
+                    
+                    nGateway.style.animation = "pulseRed 0.3s";
+                    setTimeout(() => nGateway.style.animation = "", 300);
+
+                    animatePacket(nGateway, nClient, 200, "var(--c-danger)", "429");
+                    await new Promise(r => setTimeout(r, 200));
+                    
+                    updateMetrics(Math.floor(Math.random() * 10) + 20); // Fast rejection
+                }
+            }
+            
+            if(type !== 'SPIKE') isAnimating = false;
+        }
+
+        async function fireSpike() {
+            const btn = document.getElementById('btn-ddos');
+            btn.disabled = true;
+            addLog("⚠️ DDOS DETECTED: 10 concurrent requests incoming!", "log-err");
+            
+            for(let i=0; i<10; i++) {
+                fireRequest('SPIKE');
+                await new Promise(r => setTimeout(r, 150)); // Rapid fire
+            }
+            
+            setTimeout(() => { btn.disabled = false; }, 1500);
+        }
+
+        // --- ANIMATION HELPER ---
+        function getCenterCoords(element) {
+            if(!element) return {x:0, y:0};
+            const mapRect = mapUI.getBoundingClientRect();
+            const elRect = element.getBoundingClientRect();
+            return {
+                x: (elRect.left - mapRect.left) + (elRect.width / 2),
+                y: (elRect.top - mapRect.top) + (elRect.height / 2)
+            };
+        }
+
+        function animatePacket(fromEl, toEl, durationMs, color, label) {
+            if(!fromEl || !toEl) return;
+            const start = getCenterCoords(fromEl);
+            const end = getCenterCoords(toEl);
+
+            const pkt = document.createElement('div');
+            pkt.className = `packet`;
+            pkt.style.backgroundColor = color;
+            pkt.innerText = label;
+            mapUI.appendChild(pkt);
+
+            pkt.style.left = `${start.x}px`;
+            pkt.style.top = `${start.y}px`;
+            pkt.style.opacity = '1';
+            
+            void pkt.offsetWidth; // Force reflow
+
+            pkt.style.transition = `all ${durationMs}ms ease-in-out`;
+            pkt.style.left = `${end.x}px`;
+            pkt.style.top = `${end.y}px`;
+
+            setTimeout(() => pkt.remove(), durationMs);
+        }
+
+        // Init UI
+        updateBucketUI();
+    </script>
+</body>
+</html>

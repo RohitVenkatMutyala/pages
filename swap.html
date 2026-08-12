@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | hardware part 4: swapping</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+            --c-ram: #10b981; 
+            --c-disk: #64748b;
+            --c-fault: #ef4444;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1500px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid (STRICTLY VERTICAL) */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.2rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.9rem; margin: 0;}
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 10px 15px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase; font-size: 0.85rem;
+        }
+        .ui-btn:hover:not(:disabled) { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-request { background: var(--hl-cyan); }
+        .reset-btn { background: #ef4444; color: var(--white); }
+
+        /* DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 1.2fr 1fr 350px; gap: 20px; align-items: start;}
+        
+        /* STORAGE VISUALS */
+        .storage-col { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 20px; display: flex; flex-direction: column; gap: 15px; position: relative;}
+        .col-header { font-weight: 900; font-size: 1rem; text-transform: uppercase; color: white; padding: 5px 10px; border: 2px solid var(--text-dark); text-align: center; margin-top: -35px; margin-bottom: 10px;}
+        
+        #col-ram { border-color: var(--c-ram); }
+        #col-ram .col-header { background: var(--c-ram); }
+        
+        #col-disk { border-color: var(--c-disk); background: #f1f5f9; }
+        #col-disk .col-header { background: var(--c-disk); }
+
+        /* Page Blocks */
+        .page-slot { height: 70px; border: 3px dashed #cbd5e1; display: flex; justify-content: center; align-items: center; position: relative; transition: all 0.3s; background: #f8fafc;}
+        .page-node { width: 90%; height: 80%; border: 3px solid var(--text-dark); box-shadow: 3px 3px 0 var(--text-dark); display: flex; flex-direction: column; justify-content: center; align-items: center; font-weight: 900; font-family: var(--font-mono); color: white; animation: popIn 0.3s; position: relative;}
+        .page-node span { font-size: 0.6rem; text-transform: uppercase; opacity: 0.8; margin-top: 2px;}
+        .last-used { position: absolute; bottom: 2px; right: 5px; font-size: 0.55rem; color: rgba(255,255,255,0.7);}
+
+        .p-a { background: #3b82f6; } .p-b { background: #10b981; } .p-c { background: #f59e0b; }
+        .p-d { background: #8b5cf6; } .p-e { background: #ec4899; } .p-f { background: #06b6d4; }
+
+        /* Fault Alert Overlay */
+        .fault-overlay { position: absolute; inset: 0; background: rgba(239, 68, 68, 0.2); display: none; justify-content: center; align-items: center; z-index: 100; pointer-events: none; border: 4px solid var(--c-fault); animation: blink 0.5s infinite;}
+        .fault-msg { background: var(--c-fault); color: white; font-weight: 900; padding: 10px 20px; border: 3px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark);}
+
+        /* RIGHT: TERMINAL & METRICS */
+        .os-log-box { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); flex: 1; display: flex; flex-direction: column; height: 500px;}
+        .log-header { font-weight: 900; font-size: 1rem; text-transform: uppercase; padding: 10px; border-bottom: 3px solid var(--text-dark); background: var(--text-dark); color: white;}
+        .os-log { font-family: var(--font-mono); font-size: 0.8rem; overflow-y: auto; padding: 15px; flex: 1; color: #38bdf8;}
+        .os-log p { margin: 4px 0; border-bottom: 1px dashed #334155; padding-bottom: 4px;}
+        
+        .metrics-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px; margin-bottom: 20px;}
+        .stat-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px;}
+        .stat-val { color: var(--accent-purple); font-family: var(--font-mono);}
+
+        @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes slideOut { to { transform: translateX(120%); opacity: 0; } }
+        @keyframes slideInDisk { from { transform: translateX(-120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1> page faults & swapping</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. The Page Fault Trap</h3>
+                    <p class="definition">What happens when the CPU asks for data that isn't in RAM?</p>
+                    <ul>
+                        <li>If the MMU checks the Page Table and finds the "Valid Bit" is 0, it triggers a <strong>Page Fault</strong>.</li>
+                        <li>The CPU instantly freezes. The OS Kernel takes over, finds the missing data on the slow Hard Drive, and loads it into a RAM frame.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. Eviction & LRU</h3>
+                    <p class="definition">How do we make room if RAM is 100% full?</p>
+                    <ul>
+                        <li>The OS must evict (kick out) an existing page. To minimize future slowdowns, it uses the <strong>LRU (Least Recently Used)</strong> algorithm.</li>
+                        <li>It looks for the page that hasn't been touched for the longest time and "swaps" it out to the Disk.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. Thrashing (The Death Spiral)</h3>
+                    <p class="definition">Why do old computers get so slow?</p>
+                    <ul>
+                        <li>If your apps need more RAM than you physically have, the OS spends 99% of its time moving data back and forth from the Disk.</li>
+                        <li>Because the Disk is 1000x slower than RAM, the CPU sits idle waiting for memory. This is called <strong>Thrashing</strong>.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <strong style="text-transform: uppercase; color: var(--accent-purple);">Request Page:</strong>
+                <button class="ui-btn btn-request" onclick="requestPage('A')">Page A</button>
+                <button class="ui-btn btn-request" onclick="requestPage('B')">Page B</button>
+                <button class="ui-btn btn-request" onclick="requestPage('C')">Page C</button>
+                <button class="ui-btn btn-request" onclick="requestPage('D')">Page D</button>
+                <button class="ui-btn btn-request" onclick="requestPage('E')">Page E</button>
+                <button class="ui-btn btn-request" onclick="requestPage('F')">Page F</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn reset-btn" onclick="resetSim()">↺ Flush RAM</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="storage-col" id="col-ram">
+                <div class="col-header">Physical RAM (4 Frames)</div>
+                <div class="fault-overlay" id="fault-alert">
+                    <div class="fault-msg">⚠️ PAGE FAULT!</div>
+                </div>
+                <div class="page-slot" id="ram-0"></div>
+                <div class="page-slot" id="ram-1"></div>
+                <div class="page-slot" id="ram-2"></div>
+                <div class="page-slot" id="ram-3"></div>
+            </div>
+
+            <div class="storage-col" id="col-disk">
+                <div class="col-header">Hard Drive (Swap Space)</div>
+                <div id="disk-list" style="display:flex; flex-direction:column; gap:10px;">
+                    </div>
+            </div>
+
+            <div class="metrics-panel">
+                <div class="metrics-box">
+                    <div class="stat-row"><span>Total Requests:</span> <span class="stat-val" id="m-req">0</span></div>
+                    <div class="stat-row"><span>RAM Hits:</span> <span class="stat-val" id="m-hit" style="color:#10b981;">0</span></div>
+                    <div class="stat-row"><span>Page Faults:</span> <span class="stat-val" id="m-fault" style="color:#ef4444;">0</span></div>
+                    <hr style="border:1px dashed #e2e8f0; margin: 10px 0;">
+                    <div class="stat-row"><span>System Speed:</span> <span class="stat-val" id="m-speed">100%</span></div>
+                </div>
+
+                <div class="os-log-box">
+                    <div class="log-header">Kernel Memory Log</div>
+                    <div class="os-log" id="os-log"></div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // --- SYSTEM STATE ---
+        const RAM_SIZE = 4;
+        let ram = Array(RAM_SIZE).fill(null); // { id, lastUsed }
+        let disk = []; // array of IDs
+        let timer = 0;
+        let stats = { req: 0, hit: 0, fault: 0 };
+        let isAnimating = false;
+
+        const logUI = document.getElementById('os-log');
+        const faultAlert = document.getElementById('fault-alert');
+
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        // --- CORE LOGIC ---
+
+        function hLog(msg, color="#cbd5e1") {
+            const p = document.createElement('p');
+            p.style.color = color;
+            p.innerHTML = `[T=${timer}] ${msg}`;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight;
+        }
+
+        function resetSim() {
+            ram = Array(RAM_SIZE).fill(null);
+            disk = [];
+            timer = 0;
+            stats = { req: 0, hit: 0, fault: 0 };
+            logUI.innerHTML = '';
+            hLog("System Boot. RAM Cleared.", "#10b981");
+            updateUI();
+        }
+
+        async function requestPage(pageId) {
+            if(isAnimating) return;
+            isAnimating = true;
+            timer++;
+            stats.req++;
+
+            hLog(`CPU requesting Page ${pageId}...`, "#ffffff");
+
+            // 1. Check if in RAM (HIT)
+            let ramIdx = ram.findIndex(p => p && p.id === pageId);
+            if (ramIdx !== -1) {
+                stats.hit++;
+                ram[ramIdx].lastUsed = timer;
+                hLog(`RAM HIT: Page ${pageId} is already in Frame ${ramIdx}.`, "#10b981");
+                updateUI();
+                isAnimating = false;
+                return;
+            }
+
+            // 2. PAGE FAULT (Not in RAM)
+            stats.fault++;
+            hLog(`PAGE FAULT! Page ${pageId} not found in RAM.`, "#ef4444");
+            faultAlert.style.display = 'flex';
+            await sleep(1000); // System stalls while fetching from disk
+            faultAlert.style.display = 'none';
+
+            // Check if it was on Disk
+            let diskIdx = disk.indexOf(pageId);
+            if (diskIdx !== -1) {
+                hLog(`Retrieving Page ${pageId} from Swap Space (Disk).`, "#f59e0b");
+                disk.splice(diskIdx, 1);
+            }
+
+            // 3. Find room in RAM
+            let emptyIdx = ram.findIndex(p => p === null);
+            if (emptyIdx !== -1) {
+                // Easy mode: Just put it in
+                ram[emptyIdx] = { id: pageId, lastUsed: timer };
+                hLog(`Loaded Page ${pageId} into empty RAM Frame ${emptyIdx}.`, "#10b981");
+            } else {
+                // HARD MODE: EVICTION (LRU)
+                hLog(`RAM is FULL. Invoking LRU Eviction Algorithm...`, "#fbbf24");
+                
+                // Find oldest (lowest lastUsed)
+                let oldestIdx = 0;
+                let minTime = ram[0].lastUsed;
+                for(let i=1; i<RAM_SIZE; i++) {
+                    if(ram[i].lastUsed < minTime) {
+                        minTime = ram[i].lastUsed;
+                        oldestIdx = i;
+                    }
+                }
+
+                let evicted = ram[oldestIdx];
+                hLog(`Evicting Page ${evicted.id} (Oldest used at T=${evicted.lastUsed}).`, "#cbd5e1");
+                
+                // Animate Out
+                document.getElementById(`ram-${oldestIdx}`).style.animation = "slideOut 0.5s forwards";
+                await sleep(500);
+
+                disk.push(evicted.id);
+                ram[oldestIdx] = { id: pageId, lastUsed: timer };
+                hLog(`Page ${evicted.id} moved to Swap. Page ${pageId} loaded to RAM.`, "#10b981");
+            }
+
+            updateUI();
+            isAnimating = false;
+        }
+
+        function updateUI() {
+            // RAM Slots
+            for(let i=0; i<RAM_SIZE; i++) {
+                let slot = document.getElementById(`ram-${i}`);
+                slot.style.animation = ""; // reset
+                slot.innerHTML = '';
+                if(ram[i]) {
+                    slot.innerHTML = `
+                        <div class="page-node p-${ram[i].id.toLowerCase()}">
+                            ${ram[i].id}
+                            <span>Active Page</span>
+                            <div class="last-used">LRU: ${ram[i].lastUsed}</div>
+                        </div>
+                    `;
+                }
+            }
+
+            // Disk List
+            const diskList = document.getElementById('disk-list');
+            diskList.innerHTML = disk.map(id => `
+                <div class="page-node p-${id.toLowerCase()}" style="width:100%; height:50px; flex-direction:row; gap:10px;">
+                    ${id} <span style="margin:0;">(Swapped Out)</span>
+                </div>
+            `).join('');
+
+            // Metrics
+            document.getElementById('m-req').innerText = stats.req;
+            document.getElementById('m-hit').innerText = stats.hit;
+            document.getElementById('m-fault').innerText = stats.fault;
+            
+            // Speed Calculation (Rough simulation of performance impact)
+            let speed = stats.req === 0 ? 100 : Math.round((stats.hit / stats.req) * 100);
+            const speedUI = document.getElementById('m-speed');
+            speedUI.innerText = speed + "%";
+            if(speed < 30) {
+                speedUI.style.color = "#ef4444";
+                speedUI.innerText += " (THRASHING!)";
+            } else {
+                speedUI.style.color = "#10b981";
+            }
+        }
+
+        // Init
+        resetSim();
+    </script>
+</body>
+</html>

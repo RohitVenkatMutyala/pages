@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | home</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; 
+            --white: #ffffff;
+            --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; 
+            --hl-yellow: #fbbf24;
+            --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans);
+            margin: 0; padding: 40px 20px;
+        }
+
+        .hub-container { max-width: 1000px; margin: 0 auto; text-align: center; }
+
+        .brand-name { 
+            font-size: clamp(3rem, 8vw, 4.5rem); font-weight: 900; margin: 0; letter-spacing: -2px;
+            color: var(--accent-purple); text-shadow: 4px 4px 0px var(--white); text-transform: lowercase;
+            animation: float 4s ease-in-out infinite;
+        }
+
+        .user-byline { font-weight: 600; font-size: 1.2rem; margin: 15px 0 5px 0; }
+        .author-tag { display: block; font-weight: 800; color: var(--accent-purple); text-transform: lowercase; margin-bottom: 50px; }
+
+        .portal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 25px; text-align: left; }
+
+        .portal-card {
+            background: var(--white); border: 4px solid var(--text-dark); padding: 25px; text-decoration: none;
+            color: var(--text-dark); position: relative; box-shadow: 8px 8px 0 var(--text-dark);
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: flex; flex-direction: column;
+        }
+
+        .portal-card:hover { transform: translate(-4px, -4px); box-shadow: 12px 12px 0 var(--accent-purple); }
+        .portal-card h2 { font-size: 1.5rem; margin: 0 0 10px 0; font-weight: 900; text-transform: lowercase; border-bottom: 3px solid var(--text-dark); padding-bottom: 10px;}
+        .portal-card p { font-size: 1rem; font-weight: 500; margin: 0; opacity: 0.8; }
+        
+        .mod-number { background: var(--text-dark); color: var(--white); font-weight: bold; padding: 4px 8px; font-family: monospace; font-size: 0.9rem; margin-bottom: 15px; width: fit-content; }
+
+        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-5px); } 100% { transform: translateY(0px); } }
+    </style>
+</head>
+<body>
+    <div class="hub-container">
+        <header>
+            <h1 class="brand-name">viz-os</h1>
+            <p class="user-byline">The visual guide to how computers actually think.</p>
+            <span class="author-tag">by rohith venkat mutyala</span>
+        </header>
+
+        <main class="portal-grid">
+            <a href="boundary.html" class="portal-card"><div class="mod-number">mod 01</div><h2>the boundary</h2><p>user space, kernel space, and system calls.</p></a>
+            <a href="sandbox.html" class="portal-card"><div class="mod-number">mod 02</div><h2>the sandbox</h2><p>processes, fork(), and memory isolation.</p></a>
+            <a href="threads.html" class="portal-card"><div class="mod-number">mod 03</div><h2>parallel power</h2><p>threads, TCBs, and shared memory execution.</p></a>
+            
+            <a href="scheduler.html" class="portal-card" style="background-color: var(--hl-yellow);"><div class="mod-number">mod 04</div><h2>the scheduler</h2><p>context switching, runqueues, and time slicing.</p></a>
+            
+            <a href="concurrency.html" class="portal-card"><div class="mod-number">mod 05</div><h2>concurrency</h2><p>race conditions, mutexes, and data collisions.</p></a>
+            <a href="deadlock.html" class="portal-card"><div class="mod-number">mod 06</div><h2>deadlocks</h2><p>semaphores and the dining philosophers.</p></a>
+            <a href="fs.html" class="portal-card"><div class="mod-number">mod 07</div><h2>file systems</h2><p>inodes, fragmentation, and disk blocks.</p></a>
+            <a href="chrome.html" class="portal-card"><div class="mod-number">mod 08</div><h2>the capstone</h2><p>how google chrome manages processes.</p></a>
+        </main>
+    </div>
+</body>
+</html>

@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-sys | complete network foundation</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+            
+            --c-client: #3b82f6; 
+            --c-local: #a855f7; 
+            --c-global: #ef4444;
+            --c-server: #10b981;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1500px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards (UPDATED TO VERTICAL STACK) */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 4px 4px 0 var(--text-dark); padding: 15px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.1rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.85rem; margin: 0 0 10px 0; padding: 8px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.4; font-size: 0.85rem; margin: 0;}
+
+        /* Controls */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        
+        .url-input { padding: 8px; font-family: var(--font-mono); font-size: 1rem; border: 3px solid var(--text-dark); width: 250px; font-weight: bold;}
+        .url-input:disabled { background: #e2e8f0; color: #94a3b8; }
+
+        .ui-btn { 
+            background: var(--bg-color); border: 3px solid var(--text-dark); padding: 8px 15px; font-weight: 900; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 4px 4px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase; font-size: 0.85rem;
+        }
+        .ui-btn:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-connect { background: var(--accent-purple); color: white;}
+        .btn-step { background: #10b981; color: white; }
+        .btn-auto { background: var(--hl-cyan); color: var(--text-dark); }
+        .reset-btn { background: #ef4444; color: var(--white); }
+
+        /* DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; align-items: start;}
+        
+        /* LEFT: NETWORK TOPOLOGY */
+        .network-container { background: #fdfcfa; border: 4px dashed var(--accent-purple); padding: 20px; height: 600px; position: relative; overflow: hidden; display: flex;}
+        
+        /* Zone Dividers */
+        .zone-local { flex: 1; border-right: 4px dashed #cbd5e1; position: relative; }
+        .zone-global { flex: 1.5; position: relative; background: rgba(239, 68, 68, 0.03); }
+        .zone-label { position: absolute; top: 10px; left: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 2px;}
+
+        .node { width: 120px; height: 100px; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); position: absolute; display: flex; flex-direction: column; justify-content: center; align-items: center; background: var(--white); z-index: 10;}
+        .node-icon { font-size: 2rem; margin-bottom: 5px; }
+        .node-label { font-weight: 900; text-transform: uppercase; font-size: 0.7rem; text-align: center; padding: 0 5px;}
+        .node-sub { font-weight: normal; color: #64748b; font-size: 0.6rem; margin-top: 2px; text-align: center;}
+        
+        /* Local Nodes */
+        #node-client { bottom: 5%; left: 10%; border-color: var(--c-client); }
+        #node-resolver { top: 25%; left: 10%; border-color: var(--c-local); }
+        
+        /* Visual Cache Table */
+        .cache-table { position: absolute; top: 55%; left: 5%; width: 85%; border: 2px solid var(--text-dark); background: white; font-family: var(--font-mono); font-size: 0.65rem; box-shadow: 4px 4px 0 var(--text-dark); }
+        .cache-table th { background: var(--c-local); color: white; padding: 4px; text-transform: uppercase;}
+        .cache-table td { padding: 4px; border-bottom: 1px solid #e2e8f0; }
+
+        /* Global Nodes */
+        #node-root { top: 5%; left: 15%; border-color: var(--c-global); }
+        #node-tld { top: 25%; right: 5%; border-color: #f59e0b; }
+        #node-auth { top: 50%; left: 15%; border-color: var(--c-local); }
+        
+        /* Target Web Server */
+        #node-server { bottom: 5%; right: 5%; border-color: var(--c-server); background: #f0fdf4;}
+
+        /* The Animated Packet */
+        .packet { 
+            position: absolute; padding: 6px 12px; font-weight: 900; font-family: var(--font-mono); font-size: 0.75rem;
+            color: var(--text-dark); border: 2px solid var(--text-dark); background: var(--hl-yellow);
+            z-index: 20; transform: translate(-50%, -50%); opacity: 0; transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            white-space: nowrap; box-shadow: 4px 4px 0 var(--text-dark); pointer-events: none;
+        }
+        
+        /* Packet Types */
+        .pkt-dns { background: var(--hl-yellow); color: var(--text-dark); }
+        .pkt-tcp { background: var(--hl-cyan); color: var(--text-dark); }
+        .pkt-http { background: var(--c-server); color: white; }
+
+        /* RIGHT: METRICS & LOGS */
+        .metrics-panel { display: flex; flex-direction: column; gap: 15px; }
+        
+        .latency-box { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px; text-align: center; color: white;}
+        .latency-val { font-size: 3rem; font-weight: 900; color: var(--hl-yellow); line-height: 1; font-family: var(--font-mono);}
+        .latency-sub { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-top: 5px; letter-spacing: 1px;}
+        .latency-val.updated { animation: pulseWhite 0.3s; }
+
+        .os-log-box { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); flex: 1; display: flex; flex-direction: column; height: 480px;}
+        .log-header { font-weight: 900; font-size: 0.9rem; text-transform: uppercase; padding: 10px; border-bottom: 3px solid var(--text-dark); background: #f8fafc;}
+        .os-log { font-family: var(--font-mono); font-size: 0.75rem; overflow-y: auto; padding: 15px; flex: 1; background: #0f172a; color: #cbd5e1;}
+        .os-log p { margin: 6px 0; border-bottom: 1px dashed #334155; padding-bottom: 6px; line-height: 1.4;}
+        
+        /* Log Colors */
+        .log-c { color: #60a5fa; font-weight: bold;}
+        .log-res { color: #c084fc; font-weight: bold;}
+        .log-auth { color: #34d399; font-weight: bold;}
+        .log-root { color: #f87171; font-weight: bold;}
+        .log-tld { color: #fbbf24; font-weight: bold;}
+        .log-hit { color: var(--hl-yellow); font-weight: bold; background: rgba(251, 191, 36, 0.1); padding: 4px; border-left: 4px solid var(--hl-yellow);}
+        .log-tcp { color: var(--hl-cyan); font-weight: bold;}
+        .log-http { color: var(--c-server); font-weight: bold;}
+        .log-success { color: white; font-weight: bold; background: #10b981; padding: 4px; text-align: center;}
+
+        @keyframes pulseWhite { 0%, 100% { color: var(--hl-yellow); } 50% { color: white; transform: scale(1.05);} }
+        @keyframes pulseNode { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); box-shadow: 0 0 15px var(--hl-cyan); } }
+        @keyframes highlightRow { 0%, 100% { background: white; } 50% { background: var(--hl-yellow); } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to system hub</a>
+        <h1>sys 01: complete network foundation</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. Local DNS (The Fast Path)</h3>
+                    <p class="definition">Check the Cache first.</p>
+                    <ul>
+                        <li>Your ISP's Local Resolver holds recent IP addresses in memory.</li>
+                        <li>A <strong>Cache Hit</strong> skips the global internet, keeping latency extremely low.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. Global DNS (The Slow Path)</h3>
+                    <p class="definition">Traversing the inverted tree.</p>
+                    <ul>
+                        <li>If the IP isn't cached, the Resolver must interrogate the <strong>Root</strong>, then the <strong>TLD</strong>, and finally the <strong>Authoritative</strong> server to find the target IP.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. TCP & HTTP (The Payload)</h3>
+                    <p class="definition">Establishing trust before data transfers.</p>
+                    <ul>
+                        <li>Once the IP is found, the Client executes a <strong>TCP 3-Way Handshake</strong> (SYN, SYN-ACK, ACK) with the Web Server.</li>
+                        <li>Only then is the <strong>HTTP GET</strong> request sent to fetch the site.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <strong style="text-transform: uppercase; color: var(--accent-purple);">Browser Request:</strong>
+                <span style="font-family:var(--font-mono); font-weight:bold; font-size:1.1rem;">https://</span>
+                <input type="text" id="url-input" class="url-input" value="eos.cs.berkeley.edu">
+                <button class="ui-btn btn-connect" id="btn-load" onclick="loadSequence()">1. Load URL</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn" id="btn-back" onclick="stepBack()" disabled>← Step Back</button>
+                <button class="ui-btn btn-step" id="btn-step" onclick="stepForward()" disabled>Step Forward ➔</button>
+                <button class="ui-btn btn-auto" id="btn-auto" onclick="toggleAuto()" disabled>▶ Auto Run</button>
+                <button class="ui-btn reset-btn" id="btn-reset" onclick="resetSim()">↺ Reset Cache & Network</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="network-container" id="net-map">
+                
+                <div class="zone-local">
+                    <div class="zone-label">Local Network</div>
+                    
+                    <div class="node" id="node-client">
+                        <div class="node-icon">💻</div>
+                        <div class="node-label">Client Browser</div>
+                    </div>
+
+                    <div class="node" id="node-resolver">
+                        <div class="node-icon">🕵️</div>
+                        <div class="node-label">Local DNS Resolver</div>
+                    </div>
+
+                    <table class="cache-table">
+                        <thead><tr><th colspan="2">Resolver Cache Memory</th></tr></thead>
+                        <tbody id="cache-body">
+                            <tr><td colspan="2" style="text-align:center; color:#94a3b8;">Cache is Empty</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="zone-global">
+                    <div class="zone-label" style="color:#ef4444;">Global Internet</div>
+
+                    <div class="node" id="node-root">
+                        <div class="node-icon">🌍</div>
+                        <div class="node-label">Root Server (.)</div>
+                    </div>
+
+                    <div class="node" id="node-tld">
+                        <div class="node-icon">🗂️</div>
+                        <div class="node-label" id="label-tld">TLD Server</div>
+                    </div>
+
+                    <div class="node" id="node-auth">
+                        <div class="node-icon">🗄️</div>
+                        <div class="node-label" id="label-auth">Auth Server</div>
+                    </div>
+
+                    <div class="node" id="node-server">
+                        <div class="node-icon">🖥️</div>
+                        <div class="node-label">Web Server</div>
+                        <div class="node-sub" id="server-ip">Waiting...</div>
+                    </div>
+                </div>
+
+                <div class="packet" id="packet">DATA</div>
+
+            </div>
+
+            <div class="metrics-panel">
+                
+                <div class="latency-box">
+                    <div class="latency-val" id="lat-val">0<span style="font-size:1.5rem;">ms</span></div>
+                    <div class="latency-sub">Total Network Latency</div>
+                </div>
+
+                <div class="os-log-box">
+                    <div class="log-header">Network Event Inspector</div>
+                    <div class="os-log" id="os-log">
+                        <p style="color:#64748b;">[System Ready. Enter a URL and click Load URL.]</p>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        const urlInput = document.getElementById('url-input');
+        const btnLoad = document.getElementById('btn-load');
+        const btnStep = document.getElementById('btn-step');
+        const btnBack = document.getElementById('btn-back');
+        const btnAuto = document.getElementById('btn-auto');
+        
+        const logUI = document.getElementById('os-log');
+        const latVal = document.getElementById('lat-val');
+        const packet = document.getElementById('packet');
+        const netMap = document.getElementById('net-map');
+        const cacheBody = document.getElementById('cache-body');
+
+        // Nodes
+        const clientNode = document.getElementById('node-client');
+        const resolverNode = document.getElementById('node-resolver');
+        const rootNode = document.getElementById('node-root');
+        const tldNode = document.getElementById('node-tld');
+        const authNode = document.getElementById('node-auth');
+        const serverNode = document.getElementById('node-server');
+
+        // Dynamic Labels
+        const labelTld = document.getElementById('label-tld');
+        const labelAuth = document.getElementById('label-auth');
+        const serverIpLabel = document.getElementById('server-ip');
+
+        // STATE MACHINE VARIABLES
+        let totalLatency = 0;
+        let isAnimating = false;
+        let localCache = {}; 
+        let actionQueue = [];
+        let currentStepIndex = 0;
+        let historyStack = [];
+        let autoInterval = null;
+
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        function addLog(msg, type="log-c") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerHTML = msg;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight;
+        }
+
+        function setLatency(val) {
+            totalLatency = val;
+            latVal.innerHTML = `${totalLatency}<span style="font-size:1.5rem;">ms</span>`;
+            latVal.classList.remove('updated');
+            void latVal.offsetWidth; 
+            latVal.classList.add('updated');
+        }
+
+        function getCenterCoords(element) {
+            const mapRect = netMap.getBoundingClientRect();
+            const elRect = element.getBoundingClientRect();
+            return {
+                x: (elRect.left - mapRect.left) + (elRect.width / 2),
+                y: (elRect.top - mapRect.top) + (elRect.height / 2)
+            };
+        }
+
+        async function animatePacket(fromNode, toNode, text, durationMs, pktClass="pkt-dns") {
+            const start = getCenterCoords(fromNode);
+            const end = getCenterCoords(toNode);
+
+            packet.className = `packet ${pktClass}`;
+            packet.innerText = text;
+            packet.style.transition = 'none';
+            packet.style.left = `${start.x}px`;
+            packet.style.top = `${start.y}px`;
+            packet.style.opacity = '1';
+            
+            void packet.offsetWidth;
+
+            packet.style.transition = `all ${durationMs}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+            packet.style.left = `${end.x}px`;
+            packet.style.top = `${end.y}px`;
+
+            await sleep(durationMs);
+
+            packet.style.opacity = '0';
+            toNode.style.animation = 'pulseNode 0.3s ease';
+            setTimeout(() => { toNode.style.animation = ''; }, 300);
+            
+            await sleep(100); 
+        }
+
+        function parseDomain(url) {
+            let clean = url.replace(/^(?:https?:\/\/)?(?:www\.)?/i, "").split('/')[0];
+            let parts = clean.split('.');
+            if(parts.length < 2) return { full: "berkeley.edu", base: "berkeley", tld: "edu", sub: "" };
+            let tld = parts[parts.length - 1]; 
+            let base = parts[parts.length - 2];
+            let sub = parts.slice(0, parts.length - 2).join('.');
+            return { full: clean, base: base, tld: tld, sub: sub };
+        }
+
+        function updateCacheUI() {
+            if(Object.keys(localCache).length === 0) {
+                cacheBody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:#94a3b8;">Cache is Empty</td></tr>`;
+                return;
+            }
+            cacheBody.innerHTML = Object.entries(localCache).map(([domain, ip]) => 
+                `<tr id="cache-row-${domain}"><td>${domain}</td><td style="font-weight:bold;">${ip}</td></tr>`
+            ).join('');
+        }
+
+        // --- THE ENGINE: QUEUE GENERATOR ---
+        function generateQueue(url) {
+            let q = [];
+            const parsed = parseDomain(url);
+            let targetIP = "";
+            let isHit = !!localCache[parsed.full];
+
+            // 1. Client to Resolver
+            q.push({
+                log: `--- PHASE 1: DNS RESOLUTION ---<br><strong>[CLIENT]</strong> Requesting IP for <em>${parsed.full}</em>...`, 
+                logType: "log-c", from: clientNode, to: resolverNode, text: `Query: ${parsed.full}`, 
+                cls: "pkt-dns", lat: Math.floor(Math.random()*10)+5
+            });
+
+            if(isHit) {
+                targetIP = localCache[parsed.full];
+                q.push({
+                    log: `<strong>[LOCAL DNS]</strong> CACHE HIT! Skipping Global Internet.`, logType: "log-hit",
+                    from: resolverNode, to: clientNode, text: `IP: ${targetIP}`, cls: "pkt-dns", lat: 5,
+                    uiData: () => { document.getElementById(`cache-row-${parsed.full}`).style.animation = "highlightRow 0.8s ease"; }
+                });
+            } else {
+                q.push({
+                    log: `<strong>[LOCAL DNS]</strong> CACHE MISS. Routing to Global DNS Tree...`, logType: "log-res",
+                    from: resolverNode, to: rootNode, text: `Where is .${parsed.tld}?`, cls: "pkt-dns", lat: 30,
+                    uiData: () => { labelTld.innerText = `.${parsed.tld} TLD`; labelAuth.innerText = `${parsed.base} Auth`; }
+                });
+                q.push({ log: `<strong>[ROOT]</strong> Ask .${parsed.tld} TLD.`, logType: "log-root", from: rootNode, to: resolverNode, text: `Ask .${parsed.tld}`, cls: "pkt-dns", lat: 30 });
+                q.push({ log: `<strong>[RESOLVER]</strong> Querying TLD Server...`, logType: "log-res", from: resolverNode, to: tldNode, text: `Where is ${parsed.base}?`, cls: "pkt-dns", lat: 30 });
+                q.push({ log: `<strong>[TLD]</strong> Go to Auth Server.`, logType: "log-tld", from: tldNode, to: resolverNode, text: `Go to Auth`, cls: "pkt-dns", lat: 30 });
+                q.push({ log: `<strong>[RESOLVER]</strong> Querying Auth Server...`, logType: "log-res", from: resolverNode, to: authNode, text: `IP for ${parsed.full}?`, cls: "pkt-dns", lat: 30 });
+
+                targetIP = `${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`;
+
+                q.push({
+                    log: `<strong>[AUTH SERVER]</strong> Found A-Record! IP is <strong>${targetIP}</strong>.`, logType: "log-auth",
+                    from: authNode, to: resolverNode, text: `IP: ${targetIP}`, cls: "pkt-dns", lat: 30,
+                    uiData: () => { localCache[parsed.full] = targetIP; updateCacheUI(); }
+                });
+                q.push({ log: `<strong>[RESOLVER]</strong> Caching and returning IP.`, logType: "log-res", from: resolverNode, to: clientNode, text: `IP: ${targetIP}`, cls: "pkt-dns", lat: 10 });
+            }
+
+            // 2. TCP
+            q.push({
+                log: `<br>--- PHASE 2: TCP HANDSHAKE ---<br><strong>[CLIENT]</strong> Initiating TCP with Web Server.`, logType: "log-tcp",
+                from: clientNode, to: serverNode, text: `[SYN] Connect?`, cls: "pkt-tcp", lat: 40,
+                uiData: () => { serverIpLabel.innerText = `IP: ${targetIP}`; }
+            });
+            q.push({ log: `<strong>[SERVER]</strong> Acknowledging request.`, logType: "log-tcp", from: serverNode, to: clientNode, text: `[SYN-ACK] Ack`, cls: "pkt-tcp", lat: 40 });
+            q.push({ log: `<strong>[CLIENT]</strong> Connection established.`, logType: "log-tcp", from: clientNode, to: serverNode, text: `[ACK] Established!`, cls: "pkt-tcp", lat: 40 });
+
+            // 3. HTTP
+            q.push({ log: `<br>--- PHASE 3: HTTP APPLICATION ---<br><strong>[CLIENT]</strong> HTTP GET /`, logType: "log-http", from: clientNode, to: serverNode, text: `HTTP GET /`, cls: "pkt-http", lat: 30 });
+            q.push({ log: `<strong>[WEB SERVER]</strong> Delivering HTML Payload...`, logType: "log-http", from: serverNode, to: clientNode, text: `HTTP 200 OK`, cls: "pkt-http", lat: 60 });
+            q.push({ log: `<div class="log-success">PAGE LOAD COMPLETE!</div>`, logType: "log-success", from: null, to: null, lat: 0 });
+
+            return q;
+        }
+
+        // --- BUTTON ACTIONS ---
+
+        function loadSequence() {
+            if(isAnimating) return;
+            const url = urlInput.value.trim();
+            if(!url) return;
+
+            actionQueue = generateQueue(url);
+            currentStepIndex = 0;
+            historyStack = [];
+            totalLatency = 0;
+            setLatency(0);
+            
+            logUI.innerHTML = `<p style="color:#64748b;">[Route Calculated. Ready to step forward.]</p>`;
+            serverIpLabel.innerText = "Waiting...";
+            labelTld.innerText = "TLD Server";
+            labelAuth.innerText = "Auth Server";
+
+            btnLoad.disabled = true;
+            urlInput.disabled = true;
+            updateControls();
+        }
+
+        function updateControls() {
+            let canStep = currentStepIndex < actionQueue.length && !isAnimating;
+            btnStep.disabled = !canStep;
+            btnAuto.disabled = !canStep && !autoInterval;
+            btnBack.disabled = historyStack.length === 0 || isAnimating;
+        }
+
+        function saveState() {
+            historyStack.push({
+                idx: currentStepIndex,
+                lat: totalLatency,
+                log: logUI.innerHTML,
+                cache: JSON.parse(JSON.stringify(localCache)),
+                tldLab: labelTld.innerText,
+                authLab: labelAuth.innerText,
+                srvLab: serverIpLabel.innerText
+            });
+        }
+
+        async function stepForward() {
+            if(currentStepIndex >= actionQueue.length || isAnimating) return;
+            isAnimating = true;
+            updateControls();
+
+            saveState();
+            let action = actionQueue[currentStepIndex];
+
+            if(action.log) addLog(action.log, action.logType);
+            if(action.lat > 0) setLatency(totalLatency + action.lat);
+            if(action.uiData) action.uiData();
+
+            if(action.from && action.to) {
+                await animatePacket(action.from, action.to, action.text, 450, action.cls);
+            }
+
+            currentStepIndex++;
+            isAnimating = false;
+
+            if(currentStepIndex >= actionQueue.length && autoInterval) {
+                toggleAuto(); // Stop auto at end
+            }
+            updateControls();
+        }
+
+        function stepBack() {
+            if(historyStack.length === 0 || isAnimating) return;
+            if(autoInterval) toggleAuto(); // Pause
+
+            let state = historyStack.pop();
+            
+            currentStepIndex = state.idx;
+            setLatency(state.lat);
+            logUI.innerHTML = state.log;
+            localCache = state.cache;
+            updateCacheUI();
+            
+            labelTld.innerText = state.tldLab;
+            labelAuth.innerText = state.authLab;
+            serverIpLabel.innerText = state.srvLab;
+
+            updateControls();
+        }
+
+        function toggleAuto() {
+            if(autoInterval) {
+                clearInterval(autoInterval);
+                autoInterval = null;
+                btnAuto.innerText = "▶ Auto Run";
+                btnAuto.style.background = "var(--hl-cyan)";
+            } else {
+                btnAuto.innerText = "⏸ Pause";
+                btnAuto.style.background = "#f59e0b";
+                autoInterval = setInterval(() => {
+                    if(!isAnimating && currentStepIndex < actionQueue.length) stepForward();
+                }, 600);
+            }
+            updateControls();
+        }
+
+        function resetSim() {
+            if(autoInterval) toggleAuto();
+            totalLatency = 0;
+            localCache = {};
+            actionQueue = [];
+            currentStepIndex = 0;
+            historyStack = [];
+
+            setLatency(0);
+            logUI.innerHTML = '<p style="color:#64748b;">[System Ready. Enter a URL and click Load URL.]</p>';
+            
+            labelTld.innerText = "TLD Server";
+            labelAuth.innerText = "Auth Server";
+            serverIpLabel.innerText = "Waiting...";
+
+            updateCacheUI();
+            urlInput.disabled = false;
+            btnLoad.disabled = false;
+            packet.style.opacity = '0';
+
+            updateControls();
+        }
+
+        // Init
+        updateCacheUI();
+    </script>
+</body>
+</html>

@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | synchronization</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 40px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { font-size: 3rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid (Vertical Stack) */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 20px; width: auto;}
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.3rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.95rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.95rem; margin: 0;}
+        .theory-card li { margin-bottom: 6px; }
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 12px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase; font-size: 0.85rem;
+        }
+        .ui-btn:hover { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn.active { background: var(--hl-cyan); box-shadow: 0 0 0 transparent; transform: translate(2px, 2px); }
+        .reset-btn { background: #ef4444; color: var(--white); }
+
+        /* Dashboard Layout */
+        .dashboard { display: grid; grid-template-columns: 2.5fr 1fr; gap: 20px; }
+        .box { background: var(--white); border: 4px solid var(--text-dark); padding: 20px; box-shadow: 8px 8px 0 var(--text-dark); border-radius: 4px; }
+        
+        /* Universal Canvas */
+        .sim-canvas { position: relative; width: 100%; height: 420px; display: flex; justify-content: center; align-items: center; background: #fdfcfa; border: 4px dashed var(--accent-purple); overflow: hidden; flex-direction: column;}
+        
+        /* Shared Elements */
+        .entity-circle { 
+            position: absolute; width: 75px; height: 75px; border: 4px solid var(--text-dark); border-radius: 50%;
+            background: var(--white); display: flex; justify-content: center; align-items: center; font-weight: 900; font-size: 1.1rem;
+            box-shadow: 4px 4px 0 var(--text-dark); transition: all 0.3s; z-index: 10; text-align: center; line-height: 1.1;
+        }
+        .entity-box {
+            padding: 15px 20px; border: 4px solid var(--text-dark); font-weight: 900; font-size: 1.1rem;
+            background: var(--white); box-shadow: 4px 4px 0 var(--text-dark); transition: all 0.3s; z-index: 10; text-align: center;
+        }
+
+        /* States */
+        .state-idle { background: #e2e8f0; color: #64748b; border-style: dashed; }
+        .state-active { background: #10b981; color: white; transform: scale(1.05); box-shadow: 6px 6px 0 var(--text-dark); }
+        .state-waiting { background: #f87171; color: white; animation: pulse 1s infinite; }
+        .state-blocked { background: #94a3b8; color: white; opacity: 0.5; }
+        .state-reading { background: #3b82f6; color: white; }
+        .state-writing { background: #8b5cf6; color: white; }
+
+        /* Specific: Philosophers */
+        .phil-table { width: 180px; height: 180px; background: #fbbf24; border: 6px solid var(--text-dark); border-radius: 50%; position: absolute; box-shadow: inset 0 0 20px rgba(0,0,0,0.2); display: flex; justify-content: center; align-items: center; flex-direction: column;}
+        .chopstick { position: absolute; width: 6px; height: 50px; background: var(--text-dark); border-radius: 3px; transition: all 0.3s; }
+        .chopstick.taken { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
+        .sem-tracker { background: var(--white); border: 3px solid var(--text-dark); padding: 5px 10px; font-size: 0.9rem; font-family: var(--font-mono); text-align: center; font-weight: bold;}
+
+        /* Specific: Prod-Cons */
+        .pc-container { display: flex; gap: 20px; align-items: center; width: 90%; justify-content: space-between; position: relative;}
+        .buffer-belt { display: flex; gap: 10px; border: 4px solid var(--text-dark); padding: 15px; background: #cbd5e1; box-shadow: inset 4px 4px 0 rgba(0,0,0,0.1);}
+        .buffer-slot { width: 45px; height: 45px; background: var(--white); border: 3px solid var(--text-dark); display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 1.5rem;}
+        .buffer-slot.full { background: var(--hl-yellow); }
+        .sem-board { position: absolute; top: 15px; display: flex; gap: 15px; }
+        .mutex-key { position: absolute; padding: 5px 10px; background: #ef4444; color: white; font-weight: bold; border: 3px solid var(--text-dark); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.4s; z-index: 20; font-size: 0.8rem;}
+
+        /* Specific: Read-Write */
+        .rw-container { display: flex; gap: 40px; align-items: stretch; width: 85%; justify-content: center; height: 280px;}
+        .database { flex: 1; background: #fbbf24; border: 6px solid var(--text-dark); border-radius: 10px; display: flex; flex-direction: column; box-shadow: 8px 8px 0 var(--text-dark); position: relative; overflow: hidden;}
+        .db-header { background: var(--text-dark); color: white; padding: 10px; text-align: center; font-weight: bold; font-size: 1.2rem; }
+        .db-content { flex: 1; display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; padding: 15px; background: rgba(255,255,255,0.3);}
+        .wait-queue { width: 150px; display: flex; flex-direction: column; gap: 10px; border: 4px dashed var(--text-dark); padding: 15px; background: #f8fafc;}
+        .lock-status { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: var(--white); border: 2px solid var(--text-dark); font-size: 0.9rem; padding: 4px 8px; text-transform: uppercase; font-weight: bold;}
+
+        /* Specific: Barber */
+        .barber-shop { display: flex; gap: 40px; align-items: center; width: 80%; justify-content: center;}
+        .waiting-room { display: flex; gap: 15px; border: 4px solid var(--text-dark); padding: 20px; background: #e2e8f0; box-shadow: 6px 6px 0 var(--text-dark);}
+        .chair { width: 55px; height: 55px; border: 3px solid var(--text-dark); background: var(--white); display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 1.2rem; border-radius: 10px;}
+        .chair.occupied { background: #f87171; color: white; }
+
+        /* OS Terminal */
+        .os-log { background: #1e293b; color: #38bdf8; font-family: var(--font-mono); padding: 15px; height: 480px; overflow-y: auto; font-size: 0.85rem; border: 4px solid var(--text-dark); box-shadow: 8px 8px 0 var(--text-dark); }
+        .os-log p { margin: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;}
+        .log-sys { color: #f43f5e; font-weight: bold; }
+        .log-warn { color: #fbbf24; font-weight: bold; }
+        .log-success { color: #a3e635; font-weight: bold; }
+        .log-action { color: #cbd5e1; }
+
+        /* Step Controls */
+        .step-container { display: flex; gap: 15px; margin-top: 20px; }
+        .step-btn { 
+            background: var(--white); border: 3px solid var(--text-dark); padding: 15px; font-size: 1.2rem; 
+            font-weight: bold; cursor: pointer; text-transform: lowercase; 
+            box-shadow: 4px 4px 0 var(--text-dark); transition: all 0.1s; display: flex; justify-content: center; align-items: center;
+        }
+        .step-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 2px 2px 0 transparent; }
+        .step-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        .deadlock-alert { animation: bgFlash 1s infinite alternate; border-color: #ef4444 !important;}
+        @keyframes bgFlash { from { background-color: #fef2f2; } to { background-color: #fca5a5; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1>the big five: synchronization</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. Dining Philosophers</h3>
+                    <p class="definition">Teaches: Resource Allocation & Deadlock Prevention.</p>
+                    <ul>
+                        <li><strong>Unsafe:</strong> If 5 philosophers grab their left chopstick, 0 remain. Everyone waits for the right. <strong>Circular Wait</strong> causes a system freeze (Deadlock).</li>
+                        <li><strong>Safe Fix:</strong> Use a Semaphore initialized to 4 (a Waiter) so only 4 people can sit at the 5-seat table, guaranteeing one can always eat.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. Cigarette Smokers</h3>
+                    <p class="definition">Teaches: Conditional Synchronization (Signaling specific threads).</p>
+                    <ul>
+                        <li>Threads shouldn't always wake up sequentially. If an Agent places Paper & Matches on the table, the OS must wake up the <em>specific</em> smoker who has Tobacco.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. Producer-Consumer (Bounded Buffer)</h3>
+                    <p class="definition">Teaches: Managing Queues and Capacity Limits.</p>
+                    <ul>
+                        <li>Uses 3 Semaphores: <code>Mutex</code> (Lock), <code>Empty</code> (Counts free slots), <code>Full</code> (Counts used slots).</li>
+                        <li><strong>Mutex:</strong> Ensures only one person modifies the buffer at a time. If the Producer holds the Mutex, the Consumer is blocked.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>4. Readers-Writers</h3>
+                    <p class="definition">Teaches: Shared vs. Exclusive Locks.</p>
+                    <ul>
+                        <li><strong>Rule:</strong> Multiple Readers can be inside the Database at the exact same time (Shared Lock).</li>
+                        <li><strong>Writer:</strong> Needs <em>exclusive</em> access. If a Writer wants to write, new Readers are blocked, and it waits for the DB to completely empty out.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>5. Sleeping Barber</h3>
+                    <p class="definition">Teaches: Client-Server queues & Dropped Tasks.</p>
+                    <ul>
+                        <li>Barber sleeps if no customers. Customer wakes him up.</li>
+                        <li>If Barber is busy, customers wait in N chairs. If chairs are full, new customers <strong>leave the system entirely</strong> (Task Dropped/Timeout).</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <strong style="text-transform: uppercase; color: var(--accent-purple);">Select Problem:</strong>
+                <button class="ui-btn active mode-btn" onclick="setMode('PHIL_UNSAFE')">1. Phil (Deadlock)</button>
+                <button class="ui-btn mode-btn" onclick="setMode('PHIL_SAFE')">2. Phil (Safe)</button>
+                <button class="ui-btn mode-btn" onclick="setMode('SMOKERS')">3. Smokers</button>
+                <button class="ui-btn mode-btn" onclick="setMode('PROD_CONS')">4. Prod / Cons</button>
+                <button class="ui-btn mode-btn" onclick="setMode('READ_WRITE')">5. Read / Write</button>
+                <button class="ui-btn mode-btn" onclick="setMode('BARBER')">6. Barber</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn reset-btn" onclick="resetSim()">↺ Reset OS State</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <div class="box" style="background: transparent; border: none; box-shadow: none; padding: 0;">
+                
+                <div class="sim-canvas" id="canvas">
+                    </div>
+
+                <div class="step-container">
+                    <button class="step-btn" onclick="stepBack()" id="back-btn" style="flex: 1;" disabled>← step back</button>
+                    <button class="step-btn" onclick="tickClock()" id="tick-btn" style="flex: 2; background: var(--hl-yellow);">Step OS Scheduler ➔</button>
+                </div>
+            </div>
+
+            <div class="os-log" id="os-log">
+                </div>
+        </div>
+
+    </div>
+
+    <script>
+        // System State
+        let mode = 'PHIL_UNSAFE';
+        let stepIdx = 0;
+        let historyStack = [];
+        let pState = {}; 
+
+        // --- SCRIPTS ---
+        const SCRIPT_PHIL_UNSAFE = [
+            { a: 'H', target: [0,1,2,3,4], msg: "All 5 philosophers become HUNGRY." },
+            { a: 'L', target: [0,1,2,3,4], msg: "All 5 grab their Left Chopstick. (Hold and Wait condition met)." },
+            { a: 'R_FAIL', target: [0,1,2,3,4], msg: "All attempt to grab Right Chopstick. None are available." },
+            { a: 'DEADLOCK', msg: "💀 DEADLOCK DETECTED! Circular wait has frozen the system." }
+        ];
+
+        const SCRIPT_PHIL_SAFE = [
+            { a: 'H', target: [0,1,2,3,4], msg: "All 5 philosophers become HUNGRY." },
+            { a: 'W', target: [0,1,2,3], msg: "Waiter Semaphore allows P0-P3 to sit. Semaphore = 0." },
+            { a: 'B', target: [4], msg: "P4 blocked by Waiter. (Deadlock Prevented!)." },
+            { a: 'L', target: [0,1,2,3], msg: "P0-P3 grab Left Chopstick." },
+            { a: 'E', target: [3], msg: "P3 grabs Right Chopstick (free because P4 is blocked) and EATS." },
+            { a: 'D', target: [3], msg: "P3 finishes, releases chopsticks, signals Waiter." },
+            { a: 'W2', target: [4], msg: "Waiter signals P4 to sit." },
+            { a: 'E2', target: [2,4], msg: "P2 and P4 can now grab their missing chopsticks and EAT." }
+        ];
+
+        const SCRIPT_SMOKERS = [
+            { a: 'P', items: "Paper & Matches", msg: "Agent places Paper and Matches." },
+            { a: 'W', target: 0, msg: "Smoker 1 (Tobacco) recognizes combination and wakes." },
+            { a: 'E', target: 0, msg: "Smoker 1 smokes." },
+            { a: 'D', target: 0, msg: "Smoker 1 finishes, wakes Agent." },
+            { a: 'P', items: "Tobacco & Paper", msg: "Agent places Tobacco & Paper." },
+            { a: 'W', target: 2, msg: "Smoker 3 (Matches) recognizes combination and wakes." },
+            { a: 'E', target: 2, msg: "Smoker 3 smokes." }
+        ];
+
+        const SCRIPT_PROD_CONS = [
+            { a: 'REQ_M', t: 'P', msg: "Producer requests Mutex Key." },
+            { a: 'GET_M', t: 'P', msg: "Producer acquires Mutex. Locks Buffer." },
+            { a: 'PROD', amt: 2, msg: "Producer adds 2 items. Signals 'Full'." },
+            { a: 'REL_M', t: 'P', msg: "Producer releases Mutex Key." },
+            { a: 'REQ_M', t: 'C', msg: "Consumer requests Mutex Key." },
+            { a: 'GET_M', t: 'C', msg: "Consumer acquires Mutex. Locks Buffer." },
+            { a: 'REQ_M_FAIL', t: 'P', msg: "Producer tries to jump in. Mutex is held by Consumer. Producer BLOCKED." },
+            { a: 'CONS', amt: 1, msg: "Consumer takes 1 item. Signals 'Empty'." },
+            { a: 'REL_M', t: 'C', msg: "Consumer releases Mutex Key." },
+            { a: 'GET_M', t: 'P', msg: "Producer wakes up, acquires Mutex." },
+            { a: 'PROD_MAX', msg: "Producer aggressively fills the rest of the buffer (5/5). FULL." },
+            { a: 'REQ_E_FAIL', t: 'P', msg: "Producer tries to add. Checks 'Empty' Semaphore. It is 0! Producer BLOCKED." },
+        ];
+
+        const SCRIPT_READ_WRITE = [
+            { a: 'ARR', id: 1, type: 'R', msg: "Reader 1 arrives. DB is Free. Acquires SHARED lock." },
+            { a: 'IN', id: 1, type: 'R', msg: "Reader 1 reading data." },
+            { a: 'ARR', id: 2, type: 'R', msg: "Reader 2 arrives. DB has SHARED lock. Reader 2 allowed in!" },
+            { a: 'IN', id: 2, type: 'R', msg: "Reader 1 & 2 reading simultaneously." },
+            { a: 'ARR', id: 1, type: 'W', msg: "Writer 1 arrives. Needs EXCLUSIVE lock. Active readers present -> BLOCKED." },
+            { a: 'ARR', id: 3, type: 'R', msg: "Reader 3 arrives. Sees Writer 1 waiting -> BLOCKED (Prevents Writer Starvation)." },
+            { a: 'LV', id: 1, type: 'R', msg: "Reader 1 finishes and leaves." },
+            { a: 'LV', id: 2, type: 'R', msg: "Reader 2 finishes and leaves. DB is now FREE." },
+            { a: 'IN', id: 1, type: 'W', msg: "Writer 1 wakes up. Acquires EXCLUSIVE lock. Enters DB." },
+            { a: 'LV', id: 1, type: 'W', msg: "Writer 1 finishes writing. Leaves DB. DB is FREE." },
+            { a: 'IN', id: 3, type: 'R', msg: "Reader 3 wakes up. Acquires SHARED lock." }
+        ];
+
+        const SCRIPT_BARBER = [
+            { a: 'ARR', id: 1, msg: "Customer 1 arrives. Barber is asleep. WAKES Barber." },
+            { a: 'CUT', id: 1, msg: "Barber begins cutting C1's hair." },
+            { a: 'ARR', id: 2, msg: "C2 arrives. Barber busy. Sits in Waiting Room (1/3)." },
+            { a: 'ARR', id: 3, msg: "C3 arrives. Sits in Waiting Room (2/3)." },
+            { a: 'ARR', id: 4, msg: "C4 arrives. Sits in Waiting Room (3/3). Room is FULL." },
+            { a: 'DROP', id: 5, msg: "C5 arrives. Room full. C5 LEAVES SYSTEM (Task Dropped!)." },
+            { a: 'DONE', id: 1, msg: "C1 finished. Leaves shop." },
+            { a: 'CUT_NXT', id: 2, msg: "Barber takes C2 from Waiting Room (2/3). Chair opens up." }
+        ];
+
+        // --- Core Functions ---
+        const logContainer = document.getElementById('os-log');
+        const backBtn = document.getElementById('back-btn');
+        const tickBtn = document.getElementById('tick-btn');
+        const canvas = document.getElementById('canvas');
+
+        function log(msg, type = "log-action") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerText = `[STEP ${stepIdx}] ${msg}`;
+            logContainer.appendChild(p);
+            logContainer.scrollTop = logContainer.scrollHeight; 
+        }
+
+        function setMode(newMode) {
+            mode = newMode;
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            resetSim();
+        }
+
+        function resetSim() {
+            stepIdx = 0;
+            historyStack = [];
+            logContainer.innerHTML = '';
+            
+            if (mode === 'PHIL_UNSAFE') {
+                currentScript = SCRIPT_PHIL_UNSAFE;
+                pState = { p: Array(5).fill('state-idle'), c: Array(5).fill('free'), sem: 5, alert: false };
+                log(`Loaded: Dining Philosophers (UNSAFE - Will Deadlock)`, "log-sys");
+            }
+            else if (mode === 'PHIL_SAFE') {
+                currentScript = SCRIPT_PHIL_SAFE;
+                pState = { p: Array(5).fill('state-idle'), c: Array(5).fill('free'), sem: 4, alert: false };
+                log(`Loaded: Dining Philosophers (SAFE - Waiter Semaphore)`, "log-sys");
+            } 
+            else if (mode === 'SMOKERS') {
+                currentScript = SCRIPT_SMOKERS;
+                pState = { a: 'state-active', s: Array(3).fill('state-idle'), tbl: 'Empty' };
+                log(`Loaded: Cigarette Smokers`, "log-sys");
+            }
+            else if (mode === 'PROD_CONS') {
+                currentScript = SCRIPT_PROD_CONS;
+                pState = { prod: 'state-idle', cons: 'state-idle', buf: 0, max: 5, mutexOwner: 'none' };
+                log(`Loaded: Producer-Consumer (Mutex Visualized)`, "log-sys");
+            }
+            else if (mode === 'READ_WRITE') {
+                currentScript = SCRIPT_READ_WRITE;
+                pState = { dbMode: 'FREE', active: [], q: [] }; 
+                log(`Loaded: Readers-Writers`, "log-sys");
+            }
+            else if (mode === 'BARBER') {
+                currentScript = SCRIPT_BARBER;
+                pState = { barb: 'state-idle', cust: null, wait: [], dropped: 0 }; 
+                log(`Loaded: Sleeping Barber (Chairs = 3)`, "log-sys");
+            }
+            
+            updateUI();
+        }
+
+        function saveState() {
+            historyStack.push({ stepIdx, pState: JSON.parse(JSON.stringify(pState)), logHTML: logContainer.innerHTML });
+        }
+
+        function stepBack() {
+            if (historyStack.length === 0) return;
+            let snap = historyStack.pop();
+            stepIdx = snap.stepIdx;
+            pState = snap.pState;
+            logContainer.innerHTML = snap.logHTML;
+            updateUI();
+        }
+
+        // --- Execution Logic ---
+        function tickClock() {
+            if (stepIdx >= currentScript.length) return;
+            saveState();
+            let cmd = currentScript[stepIdx];
+            stepIdx++;
+            let logType = "log-action";
+
+            if (mode.includes('PHIL')) {
+                if(cmd.a==='H') cmd.target.forEach(i=>pState.p[i]='state-waiting');
+                if(cmd.a==='W') pState.sem-=4;
+                if(cmd.a==='B') { cmd.target.forEach(i=>pState.p[i]='state-blocked'); logType="log-warn"; }
+                if(cmd.a==='L') cmd.target.forEach(i=>pState.c[i]='taken');
+                if(cmd.a==='R_FAIL') logType="log-warn";
+                if(cmd.a==='DEADLOCK') { logType="log-sys"; pState.alert = true; }
+                if(cmd.a==='E' || cmd.a==='E2') { cmd.target.forEach(i=>{pState.p[i]='state-active'; pState.c[i]='taken'; pState.c[(i+1)%5]='taken';}); logType="log-success"; }
+                if(cmd.a==='D') { cmd.target.forEach(i=>{pState.p[i]='state-idle'; pState.c[i]='free'; pState.c[(i+1)%5]='free';}); pState.sem+=1; }
+                if(cmd.a==='W2') { pState.sem-=1; cmd.target.forEach(i=>pState.p[i]='state-waiting'); }
+            }
+            else if (mode === 'SMOKERS') {
+                if(cmd.a==='P') pState.tbl = cmd.items;
+                if(cmd.a==='W') pState.s[cmd.target] = 'state-waiting';
+                if(cmd.a==='E') { pState.s[cmd.target] = 'state-active'; pState.tbl = "Empty"; logType="log-success"; }
+                if(cmd.a==='D') { pState.s[cmd.target] = 'state-idle'; pState.a = 'state-active'; }
+                if(cmd.a==='AGENT_SLEEP') { pState.a = 'state-blocked'; logType="log-warn"; }
+            }
+            else if (mode === 'PROD_CONS') {
+                if(cmd.a==='REQ_M') { if(cmd.t==='P') pState.prod='state-waiting'; else pState.cons='state-waiting'; }
+                if(cmd.a==='GET_M') { 
+                    pState.mutexOwner = cmd.t; 
+                    if(cmd.t==='P') pState.prod='state-active'; else pState.cons='state-active'; 
+                    logType="log-success";
+                }
+                if(cmd.a==='REL_M') { pState.mutexOwner = 'none'; if(cmd.t==='P') pState.prod='state-idle'; else pState.cons='state-idle'; }
+                if(cmd.a==='PROD') pState.buf += cmd.amt;
+                if(cmd.a==='CONS') pState.buf -= cmd.amt;
+                if(cmd.a==='REQ_M_FAIL') { pState.prod = 'state-blocked'; logType="log-warn"; }
+                if(cmd.a==='PROD_MAX') pState.buf = pState.max;
+                if(cmd.a==='REQ_E_FAIL') { pState.prod = 'state-blocked'; pState.mutexOwner = 'none'; logType="log-warn"; }
+            }
+            else if (mode === 'READ_WRITE') {
+                if(cmd.a==='ARR') {
+                    pState.q.push({id: cmd.id, type: cmd.type, s: 'state-waiting'});
+                }
+                if(cmd.a==='IN') {
+                    let idx = pState.q.findIndex(x=>x.id===cmd.id && x.type===cmd.type);
+                    if(idx > -1) {
+                        let obj = pState.q.splice(idx, 1)[0];
+                        obj.s = cmd.type === 'R' ? 'state-reading' : 'state-writing';
+                        pState.active.push(obj);
+                        pState.dbMode = cmd.type === 'R' ? 'SHARED' : 'EXCLUSIVE';
+                        logType="log-success";
+                    }
+                }
+                if(cmd.a==='LV') {
+                    pState.active = pState.active.filter(x=> !(x.id===cmd.id && x.type===cmd.type));
+                    if(pState.active.length === 0) pState.dbMode = 'FREE';
+                }
+                // Blocked visuals
+                pState.q.forEach(q => { if(q.s === 'state-waiting') q.s = 'state-blocked'; });
+            }
+            else if (mode === 'BARBER') {
+                if(cmd.a==='ARR') {
+                    if(pState.barb === 'state-idle') { pState.barb = 'state-active'; pState.cust = cmd.id; }
+                    else { pState.wait.push(cmd.id); logType="log-warn"; }
+                }
+                if(cmd.a==='CUT') { pState.barb = 'state-active'; }
+                if(cmd.a==='DROP') { pState.dropped++; logType="log-warn"; }
+                if(cmd.a==='DONE') { pState.cust = null; pState.barb = 'state-idle'; }
+                if(cmd.a==='CUT_NXT') { pState.cust = pState.wait.shift(); pState.barb = 'state-active'; logType="log-success";}
+            }
+
+            log(cmd.msg, logType);
+            updateUI();
+        }
+
+        // --- Render UI ---
+        function updateUI() {
+            canvas.innerHTML = ''; 
+            canvas.className = pState.alert ? "sim-canvas deadlock-alert" : "sim-canvas";
+            
+            if (mode.includes('PHIL')) {
+                const cx = canvas.clientWidth / 2; const cy = canvas.clientHeight / 2;
+                let semHtml = mode === 'PHIL_SAFE' ? `<div class="sem-tracker">Waiter Sem: ${pState.sem}</div>` : '';
+                canvas.innerHTML += `<div class="phil-table" style="left:${cx-90}px; top:${cy-90}px;">${semHtml}</div>`;
+                
+                for(let i=0; i<5; i++) {
+                    let a = (i * 72 - 90) * (Math.PI / 180); 
+                    canvas.innerHTML += `<div class="entity-circle ${pState.p[i]}" style="left:${cx + 135*Math.cos(a)-37.5}px; top:${cy + 135*Math.sin(a)-37.5}px;">P${i}</div>`;
+                }
+                for(let i=0; i<5; i++) {
+                    let a = ((i * 72) + 36 - 90) * (Math.PI / 180);
+                    canvas.innerHTML += `<div class="chopstick ${pState.c[i]}" style="left:${cx + 80*Math.cos(a)-3}px; top:${cy + 80*Math.sin(a)-25}px; transform:rotate(${(i * 72) + 36}deg);"></div>`;
+                }
+            } 
+            else if (mode === 'SMOKERS') {
+                const cx = canvas.clientWidth / 2; const cy = canvas.clientHeight / 2;
+                canvas.innerHTML += `<div class="entity-box ${pState.a}" style="position:absolute; top:20px; right:20px;">OS AGENT</div>`;
+                canvas.innerHTML += `<div class="phil-table" style="border-radius:10px; background:#e2e8f0; border-style:dashed; left:${cx-90}px; top:${cy-90}px;"><span style="font-size:0.9rem">Table Items:</span><b>${pState.tbl}</b></div>`;
+                
+                const lbls = ["S1 (Tob)", "S2 (Pap)", "S3 (Mat)"];
+                const angs = [-90, 30, 150];
+                for(let i=0; i<3; i++) {
+                    let a = angs[i] * (Math.PI / 180);
+                    canvas.innerHTML += `<div class="entity-circle ${pState.s[i]}" style="left:${cx + 130*Math.cos(a)-37.5}px; top:${cy + 130*Math.sin(a)-37.5}px; font-size:0.8rem;">${lbls[i]}</div>`;
+                }
+            }
+            else if (mode === 'PROD_CONS') {
+                let html = `<div class="sem-board">
+                    <div class="sem-tracker">Empty: ${pState.max - pState.buf}</div>
+                    <div class="sem-tracker">Full: ${pState.buf}</div>
+                </div>`;
+                
+                // Mutex Key Position logic
+                let mStyle = "top: 50px; left: 50%; transform: translateX(-50%);"; // Middle
+                if(pState.mutexOwner === 'P') mStyle = "top: -20px; left: 50%; transform: translateX(-50%);";
+                if(pState.mutexOwner === 'C') mStyle = "top: -20px; left: 50%; transform: translateX(-50%);";
+
+                html += `<div class="pc-container">`;
+                html += `<div class="entity-box ${pState.prod}" style="position:relative;">PRODUCER
+                            ${pState.mutexOwner === 'P' ? `<div class="mutex-key" style="${mStyle}">MUTEX KEY</div>` : ''}
+                         </div>`;
+                
+                html += `<div style="position:relative;">
+                            ${pState.mutexOwner === 'none' ? `<div class="mutex-key" style="${mStyle}">MUTEX KEY</div>` : ''}
+                            <div class="buffer-belt">`;
+                for(let i=0; i<pState.max; i++) { html += `<div class="buffer-slot ${i < pState.buf ? 'full' : ''}">${i < pState.buf ? '📦' : ''}</div>`; }
+                html += `   </div>
+                         </div>`;
+                
+                html += `<div class="entity-box ${pState.cons}" style="position:relative;">CONSUMER
+                            ${pState.mutexOwner === 'C' ? `<div class="mutex-key" style="${mStyle}">MUTEX KEY</div>` : ''}
+                         </div>`;
+                html += `</div>`;
+                canvas.innerHTML = html;
+            }
+            else if (mode === 'READ_WRITE') {
+                let html = `<div class="rw-container">`;
+                
+                // Wait Queue
+                html += `<div class="wait-queue"><div style="font-weight:bold; font-size:0.9rem; text-align:center;">Wait Queue</div>`;
+                pState.q.forEach(q => { html += `<div class="entity-box ${q.s}" style="padding:10px; position:relative;">${q.type}${q.id}</div>`; });
+                if(pState.q.length===0) html += `<div style="text-align:center; color:#94a3b8;">Empty</div>`;
+                html += `</div>`;
+                
+                // DB
+                let dbCls = pState.dbMode === 'FREE' ? 'state-idle' : (pState.dbMode === 'SHARED' ? 'state-reading' : 'state-writing');
+                html += `<div class="database ${dbCls}">
+                    <div class="db-header">DATABASE MAIN</div>
+                    <div class="db-content">`;
+                pState.active.forEach(a => { html += `<div class="entity-box ${a.s}" style="padding:10px; position:relative;">${a.type}${a.id}</div>`; });
+                html += `</div>
+                    <div class="lock-status">Lock: ${pState.dbMode}</div>
+                </div>`;
+                
+                html += `</div>`;
+                canvas.innerHTML = html;
+            }
+            else if (mode === 'BARBER') {
+                let html = `<div class="sem-board"><div class="sem-tracker" style="color:#ef4444;">Dropped Customers: ${pState.dropped}</div></div>`;
+                html += `<div class="barber-shop">`;
+                html += `<div class="waiting-room">`;
+                for(let i=0; i<3; i++) {
+                    let occ = i < pState.wait.length;
+                    html += `<div class="chair ${occ?'occupied':''}">${occ ? 'C'+pState.wait[i] : 'Empty'}</div>`;
+                }
+                html += `</div>`;
+
+                let bStr = pState.barb === 'state-idle' ? 'Zzz...' : `Cutting C${pState.cust}`;
+                html += `<div class="entity-box ${pState.barb}" style="height:120px; display:flex; flex-direction:column; justify-content:center; border-radius:10px;">BARBER CHAIR<br><br><span style="font-size:0.9rem; font-weight:normal;">Status: ${bStr}</span></div>`;
+                html += `</div>`;
+                canvas.innerHTML = html;
+            }
+
+            let isDone = stepIdx >= currentScript.length;
+            tickBtn.disabled = isDone;
+            tickBtn.innerText = isDone ? "Simulation Complete" : "Step OS Scheduler ➔";
+            tickBtn.style.background = isDone ? "#e2e8f0" : "var(--hl-yellow)";
+            backBtn.disabled = historyStack.length === 0;
+        }
+
+        setTimeout(() => { resetSim(); }, 50);
+    </script>
+</body>
+</html>

@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | fork() & exec()</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+            --parent-blue: #3b82f6; --child-green: #10b981;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1550px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid (STRICTLY VERTICAL) */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.2rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.9rem; margin: 0;}
+        .theory-card li { margin-bottom: 6px; }
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 10px 15px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase; font-size: 0.9rem;
+        }
+        .ui-btn:hover:not(:disabled) { background: var(--hl-yellow); transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+        
+        .btn-spawn { background: var(--hl-cyan); }
+        .reset-btn { background: #ef4444; color: var(--white); }
+
+        /* 3-COLUMN DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 340px 1fr 400px; gap: 20px; align-items: start;}
+        
+        /* LEFT COLUMN: OS PCB TABLE */
+        .pcb-table-container { background: var(--white); border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px; }
+        .module-header { font-weight: 900; font-size: 1.1rem; text-transform: uppercase; background: var(--text-dark); color: var(--white); padding: 5px 15px; text-align: center; border: 3px solid var(--text-dark); margin-bottom: 10px;}
+        
+        table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.8rem; }
+        th, td { border: 1px solid var(--text-dark); padding: 6px; text-align: left; }
+        th { background: #e2e8f0; font-family: var(--font-sans); text-transform: uppercase; font-weight: 900;}
+        tr.active-pcb { background: #dcfce7; animation: highlight 1s; }
+        tr.dead-pcb { background: #fecaca; opacity: 0.5; text-decoration: line-through;}
+
+        /* MIDDLE COLUMN: MEMORY VISUALIZER */
+        .memory-view { background: #fdfcfa; border: 4px dashed var(--accent-purple); display: flex; flex-direction: column; gap: 20px; padding: 20px; min-height: 550px; position: relative;}
+        
+        .mem-box { border: 4px solid var(--text-dark); background: var(--white); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px; flex: 1; display: flex; flex-direction: column; position: relative; transition: all 0.5s;}
+        .mem-header { font-weight: 900; font-size: 1.2rem; text-transform: uppercase; color: white; padding: 5px 15px; border: 2px solid var(--text-dark); margin-top: -30px; margin-bottom: 15px; align-self: flex-start;}
+        
+        .mem-parent { border-color: var(--parent-blue); }
+        .mem-parent .mem-header { background: var(--parent-blue); border-color: #1e3a8a; }
+        
+        .mem-child { border-color: var(--child-green); opacity: 0; transform: translateY(-20px); transition: all 0.5s ease-out;}
+        .mem-child.visible { opacity: 1; transform: translateY(0); }
+        .mem-child .mem-header { background: var(--child-green); border-color: #064e3b; }
+
+        .page-container { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;}
+        .mem-page { width: 100px; height: 100px; border: 2px solid var(--text-dark); display: flex; flex-direction: column; justify-content: center; align-items: center; font-family: var(--font-mono); font-size: 0.8rem; font-weight: bold; text-align: center; background: #e2e8f0; transition: all 0.5s;}
+        .mem-page span { font-size: 0.65rem; font-family: var(--font-sans); color: #64748b; margin-top: 5px;}
+        
+        .page-code { background: #fef08a; }
+        .page-data { background: #bae6fd; }
+        .page-stack { background: #fbcfe8; }
+        
+        .page-new-code { background: #f87171; color: white; animation: popIn 0.5s;}
+        .page-new-data { background: #c084fc; color: white; animation: popIn 0.5s;}
+
+        .copy-arrow { position: absolute; left: 50%; top: 45%; transform: translateX(-50%); font-size: 2rem; color: var(--text-dark); opacity: 0; font-weight: bold;}
+        .copy-arrow.animating { animation: arrowDown 1.5s forwards; }
+
+        /* RIGHT COLUMN: CODE TRACER & TERMINAL */
+        .code-container { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); display: flex; flex-direction: column; height: 600px;}
+        
+        .c-code-box { flex: 1; padding: 15px; font-family: var(--font-mono); font-size: 0.85rem; color: #cbd5e1; border-bottom: 4px solid var(--text-dark); overflow-y: auto; position: relative;}
+        .code-line { padding: 4px 8px; border-left: 4px solid transparent; margin-bottom: 2px; transition: all 0.2s; display: flex; justify-content: space-between;}
+        .code-line.active-parent { background: rgba(59, 130, 246, 0.3); border-left-color: var(--parent-blue); font-weight: bold; color: white;}
+        .code-line.active-child { background: rgba(16, 185, 129, 0.3); border-left-color: var(--child-green); font-weight: bold; color: white;}
+        
+        .return-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 900; animation: popIn 0.3s; color: var(--text-dark);}
+        .rb-parent { background: #93c5fd; border: 1px solid #1d4ed8; }
+        .rb-child { background: #6ee7b7; border: 1px solid #047857; }
+
+        .os-log { height: 200px; color: #38bdf8; font-family: var(--font-mono); padding: 15px; overflow-y: auto; font-size: 0.8rem; background: #0f172a;}
+        .os-log p { margin: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;}
+        .log-sys { color: #f43f5e; font-weight: bold; }
+        .log-action { color: #cbd5e1; }
+        .log-warn { color: #fbbf24; font-weight: bold; }
+        .log-success { color: #a3e635; font-weight: bold; }
+
+        /* Step Controls */
+        .step-container { display: flex; gap: 15px; margin-top: 15px; width: 100%; justify-content: center;}
+        .step-btn { 
+            background: var(--white); border: 3px solid var(--text-dark); padding: 10px 20px; font-size: 1rem; 
+            font-weight: bold; cursor: pointer; text-transform: lowercase; 
+            box-shadow: 4px 4px 0 var(--text-dark); transition: all 0.1s;
+        }
+        .step-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 2px 2px 0 transparent; }
+        .step-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; border-color: #94a3b8; }
+
+        @keyframes highlight { 0% { background-color: var(--hl-yellow); } 100% { background-color: transparent; } }
+        @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes arrowDown { 0% { opacity: 0; transform: translate(-50%, -20px); } 20% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, 40px); } }
+        @keyframes wipeFlash { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(2) contrast(1.5); } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1> fork() & exec()</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. The Shell is just a Process</h3>
+                    <p class="definition">When you type `./app.exe` in the terminal, how does the OS run it?</p>
+                    <ul>
+                        <li>The Shell (bash, zsh, cmd) is just a normal User Process. It does not have the power to magically spawn new processes from nothing.</li>
+                        <li>To run a new command, the Shell must literally <strong>clone itself</strong>, and then brainwash the clone into becoming the new program.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. The Clone: fork()</h3>
+                    <p class="definition">The OS System Call that creates a new process by duplicating the calling process.</p>
+                    <ul>
+                        <li>The OS creates a new PCB (Process Control Block).</li>
+                        <li>The OS completely duplicates the Parent's memory pages (Code, Variables, Stack) into the Child's memory space. They are now identical twins.</li>
+                        <li><strong>The Magic Trick:</strong> `fork()` is called ONCE, but it returns TWICE. It returns the Child's PID to the Parent, and it returns `0` to the Child. This lets the identical twins know who they are!</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. The Brainwash: exec()</h3>
+                    <p class="definition">If the clone is identical to the Shell, how do we run the new app?</p>
+                    <ul>
+                        <li>The Child uses the `if (pid == 0)` check to realize it is the child.</li>
+                        <li>It immediately calls `exec("app.exe")`.</li>
+                        <li>The OS intercepts this, <strong>wipes the Child's copied memory</strong>, and replaces it with the code and data from `app.exe`. The clone is now running the new program!</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <button class="ui-btn btn-spawn" onclick="startSim()" id="btn-start">🚀 Simulate Shell Command: ./app.exe</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn reset-btn" onclick="resetSim()">↺ Reset OS</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="pcb-table-container">
+                <div class="module-header">OS Process Table (PCBs)</div>
+                <table id="pcb-table">
+                    <thead><tr><th>PID</th><th>PPID</th><th>Name</th><th>State</th></tr></thead>
+                    <tbody id="pcb-tbody">
+                        <tr><td>1001</td><td>1</td><td><strong>bash (Shell)</strong></td><td style="color:#10b981; font-weight:bold;">RUNNING</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="memory-view">
+                
+                <div class="mem-box mem-parent" id="mem-parent">
+                    <div class="mem-header">Parent Memory Space (PID 1001)</div>
+                    <div class="page-container" id="pages-parent">
+                        <div class="mem-page page-code">Shell Logic<span>[Code Page]</span></div>
+                        <div class="mem-page page-data">Env Vars<span>[Data Page]</span></div>
+                        <div class="mem-page page-stack">bash()<span>[Stack Page]</span></div>
+                    </div>
+                </div>
+
+                <div class="copy-arrow" id="copy-arrow">⬇ DUPLICATING MEMORY PAGES ⬇</div>
+
+                <div class="mem-box mem-child" id="mem-child">
+                    <div class="mem-header">Child Memory Space (PID 1002)</div>
+                    <div class="page-container" id="pages-child">
+                        </div>
+                </div>
+            </div>
+
+            <div class="code-container">
+                <div class="module-header" style="background: #0f172a; border:none; margin:0; border-bottom: 3px solid var(--text-dark);">C Code Execution</div>
+                
+                <div class="c-code-box" id="c-code-box">
+                    <div class="code-line" id="c1">int main() {</div>
+                    <div class="code-line" id="c2">&nbsp;&nbsp;printf("Shell> ./app.exe\n");</div>
+                    <div class="code-line" id="c3">&nbsp;&nbsp;pid_t pid = fork();</div>
+                    <div class="code-line" id="c4"><br></div>
+                    <div class="code-line" id="c5">&nbsp;&nbsp;if (pid > 0) {</div>
+                    <div class="code-line" id="c6">&nbsp;&nbsp;&nbsp;&nbsp;wait(NULL); // Parent waits</div>
+                    <div class="code-line" id="c7">&nbsp;&nbsp;} else if (pid == 0) {</div>
+                    <div class="code-line" id="c8">&nbsp;&nbsp;&nbsp;&nbsp;exec("./app.exe"); // Brainwash</div>
+                    <div class="code-line" id="c9">&nbsp;&nbsp;}</div>
+                    <div class="code-line" id="c10">}</div>
+                </div>
+
+                <div class="os-log" id="os-log"></div>
+            </div>
+
+        </div>
+        
+        <div class="step-container">
+            <button class="step-btn" onclick="stepBack()" id="back-btn" disabled>← Step Back</button>
+            <button class="step-btn" onclick="tickClock()" id="tick-btn" style="background: var(--hl-yellow);" disabled>Step OS Execution ➔</button>
+        </div>
+
+    </div>
+
+    <script>
+        // --- SYSTEM ENGINE STATE ---
+        let stepIdx = 0;
+        let historyStack = [];
+        let isSimActive = false;
+
+        const SCRIPT = [
+            { a: 'READ', line: 'c2', p_act: true, msg: "Shell process reading user input." },
+            { a: 'FORK_CALL', line: 'c3', p_act: true, msg: "Shell calls fork() Syscall. Trapping to OS Kernel.", type: "log-warn" },
+            { a: 'PCB', msg: "OS pauses Shell. Allocates new PCB for Child (PID 1002).", type: "log-sys" },
+            { a: 'CLONE', msg: "OS allocates new RAM. Duplicating Parent's memory pages exactly.", type: "log-sys" },
+            { a: 'RETURN', line: 'c3', p_act: true, c_act: true, msg: "MAGIC: fork() returns TWICE simultaneously! Parent gets PID 1002, Child gets 0.", type: "log-success" },
+            { a: 'P_CHECK', line: 'c5', p_act: true, msg: "Parent executes if (pid > 0). It is True (1002 > 0)." },
+            { a: 'P_WAIT', line: 'c6', p_act: true, msg: "Parent calls wait(). OS moves Parent to BLOCKED Queue.", type: "log-warn" },
+            { a: 'C_CHECK', line: 'c7', c_act: true, msg: "Child executes else if (pid == 0). It is True (0 == 0)." },
+            { a: 'C_EXEC', line: 'c8', c_act: true, msg: "Child calls exec('./app.exe'). Trapping to OS Kernel.", type: "log-warn" },
+            { a: 'BRAINWASH', line: 'c8', c_act: true, msg: "OS WIPES Child's memory. Loads 'app.exe' code into the shell's clone.", type: "log-sys" },
+            { a: 'APP_RUN', c_act: true, msg: "Child process is now executing app.exe logic.", type: "log-success" },
+            { a: 'TERM', msg: "Child process terminates. OS destroys PCB 1002 and frees RAM.", type: "log-sys" },
+            { a: 'WAKE', line: 'c6', p_act: true, msg: "OS signals Parent. Parent wakes up and resumes.", type: "log-success" }
+        ];
+
+        const logUI = document.getElementById('os-log');
+        const pcbTbody = document.getElementById('pcb-tbody');
+        const memChild = document.getElementById('mem-child');
+        const pagesChild = document.getElementById('pages-child');
+        const copyArrow = document.getElementById('copy-arrow');
+        const btnStart = document.getElementById('btn-start');
+        const tickBtn = document.getElementById('tick-btn');
+        const backBtn = document.getElementById('back-btn');
+
+        // --- Core Functions ---
+        function osLog(msg, type = "log-action") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerText = `> ${msg}`;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight; 
+        }
+
+        function resetSim() {
+            stepIdx = 0;
+            historyStack = [];
+            isSimActive = false;
+            
+            logUI.innerHTML = '';
+            pcbTbody.innerHTML = `<tr><td>1001</td><td>1</td><td><strong>bash (Shell)</strong></td><td style="color:#10b981; font-weight:bold;">RUNNING</td></tr>`;
+            
+            memChild.classList.remove('visible');
+            pagesChild.innerHTML = '';
+            
+            document.querySelectorAll('.code-line').forEach(el => {
+                el.classList.remove('active-parent');
+                el.classList.remove('active-child');
+                let badge = el.querySelector('.return-badge');
+                if(badge) badge.remove();
+            });
+            
+            btnStart.disabled = false;
+            tickBtn.disabled = true;
+            tickBtn.innerText = "Step OS Execution ➔";
+            tickBtn.style.background = "var(--hl-yellow)";
+            backBtn.disabled = true;
+            
+            osLog(`System Ready. Shell (PID 1001) awaiting input.`, "log-sys");
+        }
+
+        function startSim() {
+            btnStart.disabled = true;
+            tickBtn.disabled = false;
+            isSimActive = true;
+            tickClock();
+        }
+
+        function saveState() {
+            historyStack.push({
+                stepIdx,
+                logHTML: logUI.innerHTML,
+                pcbHTML: pcbTbody.innerHTML,
+                childVis: memChild.classList.contains('visible'),
+                childHTML: pagesChild.innerHTML
+            });
+        }
+
+        function stepBack() {
+            if (historyStack.length === 0) return;
+            let snap = historyStack.pop();
+            
+            stepIdx = snap.stepIdx;
+            logUI.innerHTML = snap.logHTML;
+            pcbTbody.innerHTML = snap.pcbHTML;
+            pagesChild.innerHTML = snap.childHTML;
+            
+            if(snap.childVis) memChild.classList.add('visible');
+            else memChild.classList.remove('visible');
+
+            // Reset code highlights cleanly
+            document.querySelectorAll('.code-line').forEach(el => {
+                el.classList.remove('active-parent');
+                el.classList.remove('active-child');
+                let badge = el.querySelector('.return-badge');
+                if(badge) badge.remove();
+            });
+
+            tickBtn.disabled = false;
+            tickBtn.innerText = "Step OS Execution ➔";
+            tickBtn.style.background = "var(--hl-yellow)";
+            backBtn.disabled = historyStack.length === 0;
+        }
+
+        function tickClock() {
+            if (!isSimActive || stepIdx >= SCRIPT.length) return;
+            saveState();
+            
+            let cmd = SCRIPT[stepIdx];
+            stepIdx++;
+
+            osLog(cmd.msg, cmd.type || "log-action");
+
+            // Code Highlights
+            document.querySelectorAll('.code-line').forEach(el => {
+                el.classList.remove('active-parent');
+                el.classList.remove('active-child');
+            });
+            
+            if (cmd.line) {
+                let lineEl = document.getElementById(cmd.line);
+                if(cmd.p_act && cmd.c_act) {
+                    lineEl.classList.add('active-parent');
+                    lineEl.style.background = "linear-gradient(90deg, rgba(59,130,246,0.3) 50%, rgba(16,185,129,0.3) 50%)";
+                    lineEl.style.borderLeftColor = "var(--text-dark)";
+                } else if (cmd.p_act) {
+                    lineEl.classList.add('active-parent');
+                    lineEl.style.background = ""; // reset
+                } else if (cmd.c_act) {
+                    lineEl.classList.add('active-child');
+                    lineEl.style.background = ""; // reset
+                }
+            }
+
+            // Visual Actions
+            if (cmd.a === 'PCB') {
+                pcbTbody.innerHTML += `<tr class="active-pcb" id="pcb-1002"><td>1002</td><td>1001</td><td><strong>bash (Clone)</strong></td><td style="color:#10b981; font-weight:bold;">READY</td></tr>`;
+            }
+            else if (cmd.a === 'CLONE') {
+                copyArrow.classList.add('animating');
+                setTimeout(() => copyArrow.classList.remove('animating'), 1500);
+                memChild.classList.add('visible');
+                pagesChild.innerHTML = `
+                    <div class="mem-page page-code">Shell Logic<span>[Code Page]</span></div>
+                    <div class="mem-page page-data">Env Vars<span>[Data Page]</span></div>
+                    <div class="mem-page page-stack">bash()<span>[Stack Page]</span></div>
+                `;
+            }
+            else if (cmd.a === 'RETURN') {
+                let lineEl = document.getElementById('c3');
+                lineEl.innerHTML += `<div style="display:flex; gap:5px;">
+                    <div class="return-badge rb-parent">Parent PID: 1002</div>
+                    <div class="return-badge rb-child">Child PID: 0</div>
+                </div>`;
+                document.getElementById('pcb-1002').innerHTML = `<td>1002</td><td>1001</td><td><strong>bash (Clone)</strong></td><td style="color:#10b981; font-weight:bold;">RUNNING</td>`;
+            }
+            else if (cmd.a === 'P_WAIT') {
+                pcbTbody.innerHTML = `
+                    <tr><td>1001</td><td>1</td><td><strong>bash (Shell)</strong></td><td style="color:#ef4444; font-weight:bold;">BLOCKED</td></tr>
+                    <tr><td>1002</td><td>1001</td><td><strong>bash (Clone)</strong></td><td style="color:#10b981; font-weight:bold;">RUNNING</td></tr>
+                `;
+            }
+            else if (cmd.a === 'BRAINWASH') {
+                pagesChild.style.animation = "wipeFlash 1s forwards";
+                setTimeout(() => {
+                    pagesChild.innerHTML = `
+                        <div class="mem-page page-new-code">app.exe Logic<span>[Code Page]</span></div>
+                        <div class="mem-page page-new-data">app data<span>[Data Page]</span></div>
+                        <div class="mem-page page-stack">app_main()<span>[Stack Page]</span></div>
+                    `;
+                    document.getElementById('pcb-1002').innerHTML = `<td>1002</td><td>1001</td><td><strong>app.exe</strong></td><td style="color:#10b981; font-weight:bold;">RUNNING</td>`;
+                }, 500);
+            }
+            else if (cmd.a === 'TERM') {
+                pcbTbody.innerHTML = `
+                    <tr><td>1001</td><td>1</td><td><strong>bash (Shell)</strong></td><td style="color:#ef4444; font-weight:bold;">BLOCKED</td></tr>
+                    <tr class="dead-pcb"><td>1002</td><td>1001</td><td><strong>app.exe</strong></td><td style="color:#ef4444; font-weight:bold;">ZOMBIE</td></tr>
+                `;
+                memChild.classList.remove('visible');
+            }
+            else if (cmd.a === 'WAKE') {
+                pcbTbody.innerHTML = `
+                    <tr><td>1001</td><td>1</td><td><strong>bash (Shell)</strong></td><td style="color:#10b981; font-weight:bold;">RUNNING</td></tr>
+                `;
+            }
+
+            let isDone = stepIdx >= SCRIPT.length;
+            tickBtn.disabled = isDone;
+            tickBtn.innerText = isDone ? "Execution Complete" : "Step OS Execution ➔";
+            tickBtn.style.background = isDone ? "#e2e8f0" : "var(--hl-yellow)";
+            backBtn.disabled = historyStack.length === 0;
+        }
+
+        // Init
+        resetSim();
+    </script>
+</body>
+</html>

@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>viz-os | the process lifecycle</title>
+    <style>
+        :root {
+            --bg-color: #f7f1e3; --white: #ffffff; --text-dark: #1a1a1a;
+            --accent-purple: #6c4e91; --hl-yellow: #fbbf24; --hl-cyan: #22d3ee;
+            --font-sans: 'Inter', system-ui, sans-serif; --font-mono: 'Fira Code', monospace;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-dark); font-family: var(--font-sans); margin: 0; padding: 20px 30px; overflow-x: hidden;}
+        .container { max-width: 1550px; margin: 0 auto; }
+        h1 { font-size: 2.8rem; font-weight: 900; margin: 0 0 10px 0; color: var(--accent-purple); text-shadow: 2px 2px 0px var(--white); text-transform: lowercase; }
+        
+        .back-link { display: inline-block; margin-bottom: 20px; font-weight: bold; color: var(--text-dark); text-decoration: none; border-bottom: 2px solid var(--text-dark); text-transform: lowercase;}
+
+        /* Theory Cards Grid (STRICTLY VERTICAL) */
+        .theory-wrapper { margin-bottom: 30px; }
+        .theory-grid { display: flex; flex-direction: column; gap: 15px; }
+        .theory-card { background: var(--white); border: 3px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); padding: 15px 20px; }
+        .theory-card h3 { margin-top: 0; color: var(--accent-purple); font-size: 1.2rem; border-bottom: 2px dashed var(--text-dark); padding-bottom: 5px; margin-bottom: 10px;}
+        .theory-card p.definition { font-weight: 600; font-size: 0.9rem; margin: 0 0 10px 0; padding: 10px; background: #f8fafc; border-left: 4px solid var(--accent-purple); }
+        .theory-card ul { padding-left: 20px; line-height: 1.5; font-size: 0.9rem; margin: 0;}
+        .theory-card li { margin-bottom: 6px; }
+
+        /* Controls Area */
+        .controls-wrapper { background: var(--white); border: 4px solid var(--text-dark); padding: 15px 20px; box-shadow: 6px 6px 0 var(--text-dark); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;}
+        .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ui-btn { 
+            background: var(--bg-color); border: 2px solid var(--text-dark); padding: 8px 12px; font-weight: bold; cursor: pointer; 
+            font-family: var(--font-sans); box-shadow: 2px 2px 0 var(--text-dark); transition: all 0.1s; text-transform: uppercase; font-size: 0.8rem;
+        }
+        .ui-btn:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--text-dark); }
+        .ui-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+        .ui-btn:disabled { background: #e2e8f0 !important; color: #94a3b8 !important; box-shadow: none !important; cursor: not-allowed; border-color: #94a3b8 !important; }
+        
+        .btn-spawn { background: var(--hl-cyan); }
+        .btn-green { background: #10b981; color: white; }
+        .btn-warn { background: #f59e0b; color: white; }
+        .btn-danger { background: #ef4444; color: white; }
+        .reset-btn { background: var(--text-dark); color: var(--white); }
+
+        /* 2-COLUMN DASHBOARD LAYOUT */
+        .dashboard { display: grid; grid-template-columns: 2.5fr 1fr; gap: 20px; align-items: start;}
+        
+        /* STATE MACHINE CANVAS */
+        .sim-canvas { background: #fdfcfa; border: 4px dashed var(--accent-purple); padding: 30px; position: relative; min-height: 500px; display: flex; justify-content: center; align-items: center;}
+        
+        .sm-grid {
+            display: grid;
+            grid-template-columns: 1fr 1.5fr 1.5fr 1fr;
+            grid-template-rows: auto auto auto;
+            gap: 20px;
+            width: 100%;
+        }
+
+        .state-box { border: 4px solid var(--text-dark); background: var(--white); box-shadow: 6px 6px 0 var(--text-dark); display: flex; flex-direction: column; align-items: center; min-height: 140px; padding: 10px; position: relative; transition: all 0.3s;}
+        .state-header { font-weight: 900; font-size: 1.1rem; text-transform: uppercase; padding: 5px 15px; border: 2px solid var(--text-dark); margin-top: -25px; margin-bottom: 15px; background: var(--white); color: var(--text-dark); letter-spacing: 1px;}
+        
+        /* Specific States */
+        #box-new { grid-column: 1; grid-row: 1; border-color: #64748b; }
+        #box-new .state-header { background: #64748b; color: white; border-color: #334155;}
+        
+        #box-ready { grid-column: 2; grid-row: 1; border-color: #3b82f6; }
+        #box-ready .state-header { background: #3b82f6; color: white; border-color: #1e3a8a;}
+        
+        #box-running { grid-column: 3; grid-row: 1; border-color: #10b981; border-width: 6px; transform: scale(1.05);}
+        #box-running .state-header { background: #10b981; color: white; border-color: #064e3b;}
+        
+        #box-term { grid-column: 4; grid-row: 1; border-color: #1a1a1a; }
+        #box-term .state-header { background: #1a1a1a; color: white; border-color: #000;}
+        
+        #box-blocked { grid-column: 2 / 4; grid-row: 3; border-color: #ef4444; margin-top: 30px;}
+        #box-blocked .state-header { background: #ef4444; color: white; border-color: #7f1d1d;}
+
+        /* Process Entities */
+        .process-queue { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 100%;}
+        .process-node { width: 60px; height: 60px; border: 3px solid var(--text-dark); background: var(--hl-yellow); display: flex; flex-direction: column; justify-content: center; align-items: center; font-weight: 900; font-family: var(--font-mono); font-size: 1.1rem; box-shadow: 3px 3px 0 var(--text-dark); animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);}
+        .process-node .p-sub { font-size: 0.6rem; color: #475569; font-weight: bold; font-family: var(--font-sans); margin-top: 2px;}
+        
+        .p-new { background: #cbd5e1; }
+        .p-ready { background: #bfdbfe; }
+        .p-running { background: #a7f3d0; box-shadow: 0 0 15px #10b981, 3px 3px 0 var(--text-dark); transform: scale(1.1);}
+        .p-blocked { background: #fecaca; }
+        .p-term { background: #94a3b8; color: white; opacity: 0.6; box-shadow: none; border-style: dashed;}
+
+        /* OS TERMINAL */
+        .os-log-container { background: #1e293b; border: 4px solid var(--text-dark); box-shadow: 6px 6px 0 var(--text-dark); display: flex; flex-direction: column; height: 500px;}
+        .os-log-header { font-weight: 900; font-size: 1.1rem; text-transform: uppercase; background: var(--text-dark); color: var(--white); padding: 10px 15px; text-align: center; border-bottom: 3px solid var(--text-dark);}
+        .os-log { flex: 1; color: #38bdf8; font-family: var(--font-mono); padding: 15px; overflow-y: auto; font-size: 0.8rem; }
+        .os-log p { margin: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;}
+        .log-sys { color: #f43f5e; font-weight: bold; }
+        .log-action { color: #cbd5e1; }
+        .log-warn { color: #fbbf24; font-weight: bold; }
+        .log-success { color: #a3e635; font-weight: bold; }
+
+        @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← back to hub</a>
+        <h1> the process lifecycle</h1>
+        
+        <div class="theory-wrapper">
+            <div class="theory-grid">
+                <div class="theory-card">
+                    <h3>1. Program vs. Process</h3>
+                    <p class="definition">A Program is passive (dead code on a disk). A Process is active (living in RAM).</p>
+                    <ul>
+                        <li>When you double-click an executable, the OS loads the code into RAM, assigns it a Process Control Block (PCB), and turns it into a living, breathing <strong>Process</strong>.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>2. The 5-State Lifecycle</h3>
+                    <p class="definition">Every process in existence travels through this strict flowchart.</p>
+                    <ul>
+                        <li><strong>NEW:</strong> The PCB is created, but the process is waiting to be admitted into RAM.</li>
+                        <li><strong>READY:</strong> Fully loaded in RAM, patiently waiting in a queue for its turn on the CPU.</li>
+                        <li><strong>RUNNING:</strong> Currently executing instructions on the physical CPU chip.</li>
+                        <li><strong>BLOCKED (WAITING):</strong> The process asked for something slow (like reading a hard drive or waiting for a user to press a key). The CPU kicks it out so it doesn't waste time.</li>
+                        <li><strong>TERMINATED:</strong> Execution finished. The OS destroys the PCB and frees the RAM.</li>
+                    </ul>
+                </div>
+                <div class="theory-card">
+                    <h3>3. Context Switching</h3>
+                    <p class="definition">The illusion of multitasking.</p>
+                    <ul>
+                        <li>If you have 1 CPU core, only <strong>ONE</strong> process can be RUNNING at a time.</li>
+                        <li>The OS uses <em>Time Interrupts</em> to violently pause the RUNNING process, save its registers to its PCB, move it back to the READY queue, and load the next process. It does this thousands of times a second.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <strong style="text-transform: uppercase; color: var(--accent-purple);">OS Kernel Actions:</strong>
+                <button class="ui-btn btn-spawn" onclick="doAction('SPAWN')" id="btn-spawn">+ 1. Spawn Process</button>
+                <button class="ui-btn btn-green" onclick="doAction('ADMIT')" id="btn-admit">2. Admit to Ready</button>
+                <button class="ui-btn btn-green" onclick="doAction('DISPATCH')" id="btn-dispatch">3. Dispatch to CPU</button>
+                
+                <span style="color: #cbd5e1; margin: 0 5px;">|</span>
+                
+                <button class="ui-btn btn-warn" onclick="doAction('IO_REQ')" id="btn-ioreq">4. I/O Request</button>
+                <button class="ui-btn btn-warn" onclick="doAction('IO_DONE')" id="btn-iodone">5. I/O Complete</button>
+                
+                <span style="color: #cbd5e1; margin: 0 5px;">|</span>
+
+                <button class="ui-btn btn-spawn" onclick="doAction('TIMEOUT')" id="btn-timeout">6. Time Interrupt</button>
+                <button class="ui-btn btn-danger" onclick="doAction('TERMINATE')" id="btn-term">7. Terminate</button>
+            </div>
+            <div class="control-group">
+                <button class="ui-btn reset-btn" onclick="resetSim()">↺ Restart OS</button>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            
+            <div class="sim-canvas">
+                <div class="sm-grid">
+                    
+                    <div class="state-box" id="box-new">
+                        <div class="state-header">1. NEW</div>
+                        <div class="process-queue" id="q-new"></div>
+                    </div>
+                    
+                    <div class="state-box" id="box-ready">
+                        <div class="state-header">2. READY</div>
+                        <div class="process-queue" id="q-ready"></div>
+                    </div>
+                    
+                    <div class="state-box" id="box-running">
+                        <div class="state-header">3. RUNNING (CPU)</div>
+                        <div class="process-queue" id="q-running"></div>
+                    </div>
+                    
+                    <div class="state-box" id="box-term">
+                        <div class="state-header">5. TERMINATED</div>
+                        <div class="process-queue" id="q-term"></div>
+                    </div>
+
+                    <div class="state-box" id="box-blocked">
+                        <div class="state-header">4. BLOCKED (WAITING FOR I/O)</div>
+                        <div class="process-queue" id="q-blocked"></div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="os-log-container">
+                <div class="os-log-header">Kernel Event Log</div>
+                <div class="os-log" id="os-log"></div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // --- SYSTEM ENGINE STATE ---
+        let pidCounter = 100;
+        let queues = {
+            'NEW': [],
+            'READY': [],
+            'RUNNING': [],
+            'BLOCKED': [],
+            'TERMINATED': []
+        };
+
+        const logUI = document.getElementById('os-log');
+        
+        // Button Elements
+        const btnSpawn = document.getElementById('btn-spawn');
+        const btnAdmit = document.getElementById('btn-admit');
+        const btnDispatch = document.getElementById('btn-dispatch');
+        const btnIoReq = document.getElementById('btn-ioreq');
+        const btnIoDone = document.getElementById('btn-iodone');
+        const btnTimeout = document.getElementById('btn-timeout');
+        const btnTerm = document.getElementById('btn-term');
+
+        // --- OS KERNEL FUNCTIONS ---
+        function osLog(msg, type = "log-action") {
+            const p = document.createElement('p');
+            p.className = type;
+            p.innerText = `> ${msg}`;
+            logUI.appendChild(p);
+            logUI.scrollTop = logUI.scrollHeight; 
+        }
+
+        function resetSim() {
+            pidCounter = 100;
+            queues = { 'NEW': [], 'READY': [], 'RUNNING': [], 'BLOCKED': [], 'TERMINATED': [] };
+            logUI.innerHTML = '';
+            osLog(`System Restarted. Kernel Initialized. Waiting for execution triggers.`, "log-sys");
+            updateUI();
+        }
+
+        // --- THE 5-STATE TRANSITIONS ---
+        function doAction(action) {
+            let p;
+
+            switch(action) {
+                case 'SPAWN':
+                    p = { pid: pidCounter++, state: 'NEW' };
+                    queues['NEW'].push(p);
+                    osLog(`Program double-clicked. OS created PCB for Process ${p.pid}. State set to NEW.`, "log-sys");
+                    break;
+                
+                case 'ADMIT':
+                    if (queues['NEW'].length === 0) return;
+                    p = queues['NEW'].shift();
+                    p.state = 'READY';
+                    queues['READY'].push(p);
+                    osLog(`OS allocated RAM. Process ${p.pid} admitted. Moved to READY Queue.`);
+                    break;
+                
+                case 'DISPATCH':
+                    if (queues['READY'].length === 0 || queues['RUNNING'].length > 0) return;
+                    p = queues['READY'].shift();
+                    p.state = 'RUNNING';
+                    queues['RUNNING'].push(p);
+                    osLog(`Scheduler dispatched Process ${p.pid} to the CPU. State set to RUNNING.`, "log-success");
+                    break;
+                
+                case 'IO_REQ':
+                    if (queues['RUNNING'].length === 0) return;
+                    p = queues['RUNNING'].shift();
+                    p.state = 'BLOCKED';
+                    queues['BLOCKED'].push(p);
+                    osLog(`Process ${p.pid} requested Hard Drive access. CPU preempted! Moved to BLOCKED Queue.`, "log-warn");
+                    break;
+                
+                case 'IO_DONE':
+                    if (queues['BLOCKED'].length === 0) return;
+                    p = queues['BLOCKED'].shift();
+                    p.state = 'READY';
+                    queues['READY'].push(p);
+                    osLog(`Hard Drive returned data for Process ${p.pid}. Woken up and moved to READY Queue.`, "log-success");
+                    break;
+                
+                case 'TIMEOUT':
+                    if (queues['RUNNING'].length === 0) return;
+                    p = queues['RUNNING'].shift();
+                    p.state = 'READY';
+                    queues['READY'].push(p);
+                    osLog(`Time Quantum Expired (Context Switch!). Process ${p.pid} violently paused and sent back to READY.`, "log-warn");
+                    break;
+                
+                case 'TERMINATE':
+                    if (queues['RUNNING'].length === 0) return;
+                    p = queues['RUNNING'].shift();
+                    p.state = 'TERMINATED';
+                    queues['TERMINATED'].push(p);
+                    osLog(`Process ${p.pid} executed exit() syscall. PCB destroyed, RAM freed. State: TERMINATED.`, "log-sys");
+                    break;
+            }
+
+            updateUI();
+        }
+
+        // --- RENDER UI ---
+        function generateNodeHTML(process) {
+            let clsMap = {
+                'NEW': 'p-new', 'READY': 'p-ready', 'RUNNING': 'p-running',
+                'BLOCKED': 'p-blocked', 'TERMINATED': 'p-term'
+            };
+            return `<div class="process-node ${clsMap[process.state]}">
+                        ${process.pid}
+                        <div class="p-sub">${process.state}</div>
+                    </div>`;
+        }
+
+        function updateUI() {
+            // Render Queues
+            document.getElementById('q-new').innerHTML = queues['NEW'].map(generateNodeHTML).join('');
+            document.getElementById('q-ready').innerHTML = queues['READY'].map(generateNodeHTML).join('');
+            document.getElementById('q-running').innerHTML = queues['RUNNING'].map(generateNodeHTML).join('');
+            document.getElementById('q-blocked').innerHTML = queues['BLOCKED'].map(generateNodeHTML).join('');
+            document.getElementById('q-term').innerHTML = queues['TERMINATED'].map(generateNodeHTML).join('');
+
+            // Update Button States based on valid transition rules
+            btnAdmit.disabled = queues['NEW'].length === 0;
+            // Dispatch is only valid if Ready has processes AND Running is empty (Single Core CPU)
+            btnDispatch.disabled = queues['READY'].length === 0 || queues['RUNNING'].length > 0;
+            
+            btnIoReq.disabled = queues['RUNNING'].length === 0;
+            btnTimeout.disabled = queues['RUNNING'].length === 0;
+            btnTerm.disabled = queues['RUNNING'].length === 0;
+            
+            btnIoDone.disabled = queues['BLOCKED'].length === 0;
+        }
+
+        // Initialize First Run
+        resetSim();
+    </script>
+</body>
+</html>
