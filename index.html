@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>viz-os | home</title>
     <style>
         :root {
-            --bg-color: #f7f1e3; 
+            --bg-color: #f7f1e3;
             --white: #ffffff;
             --text-dark: #1a1a1a;
-            --accent-purple: #6c4e91; 
+            --accent-purple: #6c4e91;
             --hl-yellow: #fbbf24;
             --hl-cyan: #22d3ee;
             --font-sans: 'Inter', system-ui, sans-serif;
@@ -34,9 +35,9 @@
             text-align: center;
         }
 
-        .brand-name { 
-            font-size: clamp(3rem, 10vw, 5rem); 
-            font-weight: 900; 
+        .brand-name {
+            font-size: clamp(3rem, 10vw, 5rem);
+            font-weight: 900;
             margin: 0;
             letter-spacing: -2px;
             color: var(--accent-purple);
@@ -88,9 +89,17 @@
         }
 
         /* Specific Hover Accents */
-        .card-compiler:hover { box-shadow: 12px 12px 0 var(--hl-cyan); }
-        .card-coa:hover { box-shadow: 12px 12px 0 var(--accent-purple); }
-        .card-os:hover { box-shadow: 12px 12px 0 var(--hl-yellow); }
+        .card-compiler:hover {
+            box-shadow: 12px 12px 0 var(--hl-cyan);
+        }
+
+        .card-coa:hover {
+            box-shadow: 12px 12px 0 var(--accent-purple);
+        }
+
+        .card-os:hover {
+            box-shadow: 12px 12px 0 var(--hl-yellow);
+        }
 
         .portal-card h2 {
             font-size: 1.8rem;
@@ -130,13 +139,59 @@
             letter-spacing: 1px;
         }
 
-        @keyframes float {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
+        .engage-bar {
+            margin: 40px auto 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            font-weight: 700;
         }
-        .brand-name { animation: float 4s ease-in-out infinite; }
+
+        .reach-count {
+            font-size: 0.95rem;
+            opacity: 0.75;
+        }
+
+        .like-btn {
+            background: var(--white);
+            border: 3px solid var(--text-dark);
+            border-radius: 4px;
+            padding: 8px 18px;
+            font-weight: 800;
+            font-size: 1rem;
+            cursor: pointer;
+            box-shadow: 4px 4px 0 var(--text-dark);
+            transition: all 0.15s ease;
+        }
+
+        .like-btn:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 6px 6px 0 var(--hl-yellow);
+        }
+
+        .like-btn.liked {
+            background: var(--hl-yellow);
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+
+        .brand-name {
+            animation: float 4s ease-in-out infinite;
+        }
     </style>
 </head>
+
 <body>
 
     <div class="hub-container">
@@ -145,7 +200,10 @@
             <p class="user-byline">Where people really see things the way they are meant to.</p>
             <span class="author-tag">.................</span>
         </header>
-
+    <div class="engage-bar">
+    <button class="like-btn" id="likeBtn">♥ <span id="likeCount">–</span></button>
+    <span class="reach-count">reached <span id="reachCount">–</span> people</span>
+</div>
         <main class="portal-grid">
             <a href="compiler.html" class="portal-card card-compiler">
                 <div class="icon-box" style="background: var(--hl-cyan);">{}</div>
@@ -176,6 +234,36 @@
             [ select a curriculum to begin ]
         </footer>
     </div>
+<script>
+const CA_KEY = "ut_tgumNV8vyFVD5o1WnPRaYxYcdPyY2LYHuBGtJ03w";
+const WORKSPACE = "Rohith Venkat Mutyala's Workspace";
+const headers = { Authorization: `Bearer ${CA_KEY}` };
 
+// auto-increment reach count on every page load
+fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/reach/up`, { headers })
+  .then(r => r.json())
+  .then(d => document.getElementById("reachCount").textContent = d.data.up_count);
+
+// show current like count (don't increment yet)
+fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/likes`, { headers })
+  .then(r => r.json())
+  .then(d => document.getElementById("likeCount").textContent = d.data.up_count);
+
+// handle like click (once per browser, via localStorage)
+const likeBtn = document.getElementById("likeBtn");
+if (localStorage.getItem("hasLiked")) likeBtn.classList.add("liked");
+
+likeBtn.addEventListener("click", () => {
+  if (localStorage.getItem("hasLiked")) return;
+  fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/likes/up`, { headers })
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById("likeCount").textContent = d.data.up_count;
+      likeBtn.classList.add("liked");
+      localStorage.setItem("hasLiked", "true");
+    });
+});
+</script>
 </body>
+
 </html>
