@@ -294,35 +294,28 @@
         </footer>
     </div>
     <script>
-        const CA_KEY = "ut_tgumNV8vyFVD5o1WnPRaYxYcdPyY2LYHuBGtJ03w";
-        const WORKSPACE = "rohith-venkat-mutyalas-team-5054"; // use the slug, not the display name
-        const headers = { Authorization: `Bearer ${CA_KEY}` };
+fetch(`/api/reach-up`)
+  .then(r => r.json())
+  .then(d => document.getElementById("reachCount").textContent = d.data.up_count);
 
-        // auto-increment reach count on every page load
-        fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/reach/up`, { headers })
-            .then(r => r.json())
-            .then(d => document.getElementById("reachCount").textContent = d.data.up_count);
+fetch(`/api/likes`)
+  .then(r => r.json())
+  .then(d => document.getElementById("likeCount").textContent = d.data.up_count);
 
-        // show current like count (don't increment yet)
-        fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/likes`, { headers })
-            .then(r => r.json())
-            .then(d => document.getElementById("likeCount").textContent = d.data.up_count);
+const likeBtn = document.getElementById("likeBtn");
+if (localStorage.getItem("hasLiked")) likeBtn.classList.add("liked");
 
-        // handle like click (once per browser, via localStorage)
-        const likeBtn = document.getElementById("likeBtn");
-        if (localStorage.getItem("hasLiked")) likeBtn.classList.add("liked");
-
-        likeBtn.addEventListener("click", () => {
-            if (localStorage.getItem("hasLiked")) return;
-            fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/likes/up`, { headers })
-                .then(r => r.json())
-                .then(d => {
-                    document.getElementById("likeCount").textContent = d.data.up_count;
-                    likeBtn.classList.add("liked");
-                    localStorage.setItem("hasLiked", "true");
-                });
-        });
-    </script>
+likeBtn.addEventListener("click", () => {
+  if (localStorage.getItem("hasLiked")) return;
+  fetch(`/api/likes-up`)
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById("likeCount").textContent = d.data.up_count;
+      likeBtn.classList.add("liked");
+      localStorage.setItem("hasLiked", "true");
+    });
+});
+</script>
 </body>
 
 </html>
