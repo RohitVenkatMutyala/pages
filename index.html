@@ -140,12 +140,71 @@
         }
 
         .engage-bar {
-            margin: 40px auto 0;
+            margin: 40px auto 45px;
             display: flex;
             justify-content: center;
+            align-items: stretch;
+            gap: 15px;
+        }
+
+        .stat-card {
+            background: var(--white);
+            border: 4px solid var(--text-dark);
+            border-radius: 4px;
+            box-shadow: 6px 6px 0 var(--text-dark);
+            padding: 12px 22px;
+            display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 20px;
+            justify-content: center;
+            min-width: 110px;
+        }
+
+        .stat-card .stat-number {
+            font-size: 1.6rem;
+            font-weight: 900;
+            line-height: 1.1;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.75rem;
             font-weight: 700;
+            text-transform: lowercase;
+            letter-spacing: 0.5px;
+            opacity: 0.65;
+            margin-top: 2px;
+        }
+
+        .like-btn {
+            background: var(--white);
+            border: 4px solid var(--text-dark);
+            border-radius: 4px;
+            box-shadow: 6px 6px 0 var(--text-dark);
+            padding: 12px 22px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-width: 110px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .like-btn:hover {
+            transform: translate(-3px, -3px);
+            box-shadow: 9px 9px 0 var(--hl-yellow);
+        }
+
+        .like-btn.liked {
+            background: var(--hl-yellow);
+        }
+
+        .like-btn .stat-number {
+            font-size: 1.6rem;
+        }
+
+        .like-btn .heart {
+            font-size: 1.1rem;
         }
 
         .reach-count {
@@ -197,13 +256,13 @@
     <div class="hub-container">
         <header>
             <h1 class="brand-name">PAGES</h1>
-            <p class="user-byline">Where people really see things the way they are meant to.</p>
+            <p class="user-byline">[   Where people really see things the way they are meant to   ]</p>
             <span class="author-tag">.................</span>
         </header>
-    <div class="engage-bar">
-    <button class="like-btn" id="likeBtn">♥ <span id="likeCount">–</span></button>
-    <span class="reach-count">reached <span id="reachCount">–</span> people</span>
-</div>
+        <div class="engage-bar">
+            <button class="like-btn" id="likeBtn">♥ <span id="likeCount">–</span></button>
+            <span class="reach-count">Reached <span id="reachCount">–</span> People</span>
+        </div>
         <main class="portal-grid">
             <a href="compiler.html" class="portal-card card-compiler">
                 <div class="icon-box" style="background: var(--hl-cyan);">{}</div>
@@ -234,36 +293,36 @@
             [ select a curriculum to begin ]
         </footer>
     </div>
-<script>
-const CA_KEY = "ut_tgumNV8vyFVD5o1WnPRaYxYcdPyY2LYHuBGtJ03w";
-const WORKSPACE = "Rohith Venkat Mutyala's Workspace";
-const headers = { Authorization: `Bearer ${CA_KEY}` };
+    <script>
+        const CA_KEY = "ut_tgumNV8vyFVD5o1WnPRaYxYcdPyY2LYHuBGtJ03w";
+        const WORKSPACE = "rohith-venkat-mutyalas-team-5054"; // use the slug, not the display name
+        const headers = { Authorization: `Bearer ${CA_KEY}` };
 
-// auto-increment reach count on every page load
-fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/reach/up`, { headers })
-  .then(r => r.json())
-  .then(d => document.getElementById("reachCount").textContent = d.data.up_count);
+        // auto-increment reach count on every page load
+        fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/reach/up`, { headers })
+            .then(r => r.json())
+            .then(d => document.getElementById("reachCount").textContent = d.data.up_count);
 
-// show current like count (don't increment yet)
-fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/likes`, { headers })
-  .then(r => r.json())
-  .then(d => document.getElementById("likeCount").textContent = d.data.up_count);
+        // show current like count (don't increment yet)
+        fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/likes`, { headers })
+            .then(r => r.json())
+            .then(d => document.getElementById("likeCount").textContent = d.data.up_count);
 
-// handle like click (once per browser, via localStorage)
-const likeBtn = document.getElementById("likeBtn");
-if (localStorage.getItem("hasLiked")) likeBtn.classList.add("liked");
+        // handle like click (once per browser, via localStorage)
+        const likeBtn = document.getElementById("likeBtn");
+        if (localStorage.getItem("hasLiked")) likeBtn.classList.add("liked");
 
-likeBtn.addEventListener("click", () => {
-  if (localStorage.getItem("hasLiked")) return;
-  fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/likes/up`, { headers })
-    .then(r => r.json())
-    .then(d => {
-      document.getElementById("likeCount").textContent = d.data.up_count;
-      likeBtn.classList.add("liked");
-      localStorage.setItem("hasLiked", "true");
-    });
-});
-</script>
+        likeBtn.addEventListener("click", () => {
+            if (localStorage.getItem("hasLiked")) return;
+            fetch(`https://api.counterapi.dev/v2/${WORKSPACE}/likes/up`, { headers })
+                .then(r => r.json())
+                .then(d => {
+                    document.getElementById("likeCount").textContent = d.data.up_count;
+                    likeBtn.classList.add("liked");
+                    localStorage.setItem("hasLiked", "true");
+                });
+        });
+    </script>
 </body>
 
 </html>
